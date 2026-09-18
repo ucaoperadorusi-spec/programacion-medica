@@ -8,7 +8,7 @@ const ADMIN_PIN = "1234";
 
 export default function App() {
   const [programacion, setProgramacion] = useState([]);
-  const [comunicado, setComunicado] = useState("Bienvenido al Centro Médico. Recuerde presentar su documento de identidad en caja antes de ingresar a su consulta.");
+  const [comunicado, setComunicado] = useState("Bienvenido al H. II PUCALLPA. Recuerde presentar su documento de identidad.");
   const [nuevoComunicado, setNuevoComunicado] = useState("");
   const [horaActual, setHoraActual] = useState(new Date());
   const [cargando, setCargando] = useState(false);
