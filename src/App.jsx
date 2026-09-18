@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, Stethoscope, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
+import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
 
 const ADMIN_PIN = "1234";
 
@@ -49,9 +49,6 @@ export default function App() {
     },
   };
 
-  // Filtros
-  const [areaSeleccionada, setAreaSeleccionada] = useState("TODAS");
-
   // Autenticación y Modales Admin
   const [esAdmin, setEsAdmin] = useState(false);
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
@@ -77,7 +74,7 @@ export default function App() {
 
   // Firebase: Escuchar programación en tiempo real (SOLO FECHA DE HOY)
   useEffect(() => {
-    const hoy = new Date().toLocaleDateString("en-CA"); // Formato YYYY-MM-DD
+    const hoy = new Date().toLocaleDateString("en-CA"); 
     const q = query(
       collection(db, "programacion_medica"),
       where("Fecha", "==", hoy)
@@ -466,7 +463,6 @@ export default function App() {
     if (!modoTvActivo && !modulosSeleccionados.includes(mod)) return false;
 
     if (soloTurnoActual && !estaEnTurno(item.horarios)) return false;
-    if (areaSeleccionada !== "TODAS" && (item.Area || "General") !== areaSeleccionada) return false;
 
     return true;
   });
@@ -477,8 +473,6 @@ export default function App() {
     acc[moduloKey].push(item);
     return acc;
   }, {});
-
-  const listaEspecialidades = ["TODAS", ...Array.from(new Set(programacion.map(item => item.Area || "General"))).sort()];
 
   return (
     <div className={`min-h-screen flex flex-col font-sans overflow-hidden h-screen relative transition-colors duration-300 ${
@@ -508,24 +502,6 @@ export default function App() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Selector de Especialidad subido al Header */}
-          <div className={`flex items-center space-x-2 border px-3 py-2 rounded-xl ${
-            temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800/90 border-slate-700/80 text-slate-200'
-          }`}>
-            <Stethoscope className="w-4 h-4 text-cyan-500" />
-            <select
-              value={areaSeleccionada}
-              onChange={(e) => setAreaSeleccionada(e.target.value)}
-              className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
-            >
-              {listaEspecialidades.map((esp, idx) => (
-                <option key={idx} value={esp} className={temaClaro ? "bg-white text-slate-800" : "bg-slate-900 text-white"}>
-                  {esp === "TODAS" ? "Especialidades" : esp}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Botón Filtro Turno Actual subido al Header */}
           <button
             onClick={() => setSoloTurnoActual(!soloTurnoActual)}
