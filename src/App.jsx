@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, updateDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, Search, Stethoscope, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
+import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, Stethoscope, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
 
 const ADMIN_PIN = "1234";
 
@@ -49,8 +49,7 @@ export default function App() {
     },
   };
 
-  // Filtros y Búsqueda
-  const [busqueda, setBusqueda] = useState("");
+  // Filtros
   const [areaSeleccionada, setAreaSeleccionada] = useState("TODAS");
 
   // Autenticación y Modales Admin
@@ -217,7 +216,6 @@ export default function App() {
     }
   };
 
-  // NUEVAS FUNCIONES PARA DETERMINAR EL ESTADO DEL TURNO
   const obtenerMinutos = (horaStr) => {
     if (!horaStr || horaStr === "--:--") return 0;
     const [h, m] = horaStr.split(':').map(Number);
@@ -236,7 +234,6 @@ export default function App() {
       if (ahora >= inicioMin && ahora < finMin) return 'ACTIVO';
       return 'FUTURO';
     } else {
-      // Caso donde cruza la medianoche
       if (ahora >= inicioMin || ahora < finMin) return 'ACTIVO';
       return 'PASADO';
     }
@@ -344,7 +341,6 @@ export default function App() {
 
           modulosDetectados.add(modulo);
 
-          // Lógica de captura y formateo de la Fecha del Excel
           const fechaRaw = getFieldValue(item, ['fecha_programacion', 'fecha', 'date']);
           let fechaFormateada = new Date().toLocaleDateString("en-CA");
 
@@ -472,15 +468,6 @@ export default function App() {
     if (soloTurnoActual && !estaEnTurno(item.horarios)) return false;
     if (areaSeleccionada !== "TODAS" && (item.Area || "General") !== areaSeleccionada) return false;
 
-    if (busqueda.trim() !== "") {
-      const termino = busqueda.toLowerCase();
-      const coincideMedico = (item.Medico || "").toLowerCase().includes(termino);
-      const coincideRol = (item.Rol || "").toLowerCase().includes(termino);
-      const coincideArea = (item.Area || "").toLowerCase().includes(termino);
-      const coincideModulo = (item.Modulo || "").toLowerCase().includes(termino);
-      return coincideMedico || coincideRol || coincideArea || coincideModulo;
-    }
-
     return true;
   });
 
@@ -498,7 +485,7 @@ export default function App() {
       temaClaro ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-white'
     }`}>
       
-      {/* Header */}
+      {/* Header con Filtros Integrados */}
       <header className={`px-8 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl z-20 border-b transition-colors ${
         temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
       }`}>
@@ -520,7 +507,39 @@ export default function App() {
           </div>
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Selector de Especialidad subido al Header */}
+          <div className={`flex items-center space-x-2 border px-3 py-2 rounded-xl ${
+            temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800/90 border-slate-700/80 text-slate-200'
+          }`}>
+            <Stethoscope className="w-4 h-4 text-cyan-500" />
+            <select
+              value={areaSeleccionada}
+              onChange={(e) => setAreaSeleccionada(e.target.value)}
+              className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
+            >
+              {listaEspecialidades.map((esp, idx) => (
+                <option key={idx} value={esp} className={temaClaro ? "bg-white text-slate-800" : "bg-slate-900 text-white"}>
+                  {esp === "TODAS" ? "Especialidades" : esp}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Botón Filtro Turno Actual subido al Header */}
+          <button
+            onClick={() => setSoloTurnoActual(!soloTurnoActual)}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
+              soloTurnoActual
+                ? 'bg-emerald-500/20 text-emerald-700 border-emerald-400'
+                : temaClaro ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            <span>{soloTurnoActual ? "Filtrado: Turno Actual" : "Vista: Todo"}</span>
+          </button>
+
+          {/* Selector Módulos */}
           <button
             onClick={() => setMostrarModalModulos(true)}
             className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
@@ -528,9 +547,10 @@ export default function App() {
             }`}
           >
             <SlidersHorizontal className="w-4 h-4 text-cyan-500" />
-            <span>Módulos a Mostrar ({modulosSeleccionados.length})</span>
+            <span>Módulos ({modulosSeleccionados.length})</span>
           </button>
 
+          {/* Modo Claro/Oscuro */}
           <button
             onClick={() => setTemaClaro(!temaClaro)}
             className={`p-2.5 rounded-xl border transition flex items-center gap-2 text-xs font-bold ${
@@ -543,6 +563,7 @@ export default function App() {
             {temaClaro ? <Sun className="w-4 h-4 text-amber-600" /> : <Moon className="w-4 h-4 text-blue-400" />}
           </button>
 
+          {/* Modo TV */}
           <button
             onClick={() => {
               if (modulosSeleccionados.length === 0) {
@@ -564,7 +585,7 @@ export default function App() {
             {modoTvActivo ? <Pause className="w-3 h-3 text-cyan-500" /> : <Play className="w-3 h-3 text-slate-400" />}
           </button>
 
-          {/* FECHA Y HORA DE ALTA PRECISIÓN */}
+          {/* Reloj */}
           <div className={`flex items-center space-x-2 border px-4 py-2 rounded-xl ${
             temaClaro ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/80 border-slate-700/60'
           }`}>
@@ -574,6 +595,7 @@ export default function App() {
             </span>
           </div>
 
+          {/* Administración */}
           {esAdmin ? (
             <div className={`flex items-center space-x-2 p-1.5 rounded-2xl border ${
               temaClaro ? 'bg-slate-100 border-blue-300' : 'bg-slate-800/60 border-blue-500/30'
@@ -633,63 +655,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* FILTROS Y BÚSQUEDA */}
-      <div className={`border-b px-8 py-3 flex flex-wrap items-center justify-between gap-4 z-10 transition-colors ${
-        temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900/60 border-slate-800/80'
-      }`}>
-        <div className="relative flex-1 max-w-md">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Buscar doctor, especialidad, módulo..."
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            className={`w-full border rounded-xl pl-9 pr-8 py-2 text-xs focus:outline-none transition ${
-              temaClaro 
-                ? 'bg-slate-50 border-slate-300 text-slate-800 placeholder-slate-400 focus:border-blue-500' 
-                : 'bg-slate-800/90 border-slate-700/80 text-white placeholder-slate-400 focus:border-cyan-500'
-            }`}
-          />
-          {busqueda && (
-            <button onClick={() => setBusqueda("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
-              ✕
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center space-x-3">
-          <div className={`flex items-center space-x-2 border px-3 py-1.5 rounded-xl ${
-            temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800/90 border-slate-700/80 text-slate-200'
-          }`}>
-            <Stethoscope className="w-4 h-4 text-cyan-500" />
-            <select
-              value={areaSeleccionada}
-              onChange={(e) => setAreaSeleccionada(e.target.value)}
-              className="bg-transparent text-xs font-semibold focus:outline-none cursor-pointer"
-            >
-              {listaEspecialidades.map((esp, idx) => (
-                <option key={idx} value={esp} className={temaClaro ? "bg-white text-slate-800" : "bg-slate-900 text-white"}>
-                  {esp === "TODAS" ? "Todas las Especialidades" : esp}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={() => setSoloTurnoActual(!soloTurnoActual)}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-semibold border transition ${
-              soloTurnoActual
-                ? 'bg-emerald-500/20 text-emerald-700 border-emerald-400'
-                : temaClaro ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-            }`}
-          >
-            <Filter className="w-4 h-4" />
-            <span>{soloTurnoActual ? "Filtrado: Turno Actual" : "Vista: Todo el Día"}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* MARQUEE COMUNICADO CON ANIMACIÓN CORREGIDA */}
+      {/* MARQUEE COMUNICADO */}
       {comunicado && (
         <div className={`py-2 px-4 border-b flex items-center gap-3 overflow-hidden ${
           temaClaro ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-blue-950/40 border-blue-900/50 text-blue-300'
@@ -726,11 +692,9 @@ export default function App() {
             <p className="text-xl font-medium text-center">
               {modulosSeleccionados.length === 0
                 ? "No hay ningún módulo seleccionado. Haz clic en 'Módulos a Mostrar' arriba para activarlos."
-                : busqueda 
-                  ? `No se encontraron médicos para "${busqueda}".` 
-                  : soloTurnoActual 
-                    ? "No hay personal médico atendiendo en este turno en los módulos seleccionados." 
-                    : "No hay programación cargada para la fecha de hoy en los módulos seleccionados."}
+                : soloTurnoActual 
+                  ? "No hay personal médico atendiendo en este turno en los módulos seleccionados." 
+                  : "No hay programación cargada para la fecha de hoy en los módulos seleccionados."}
             </p>
           </div>
         ) : (
@@ -808,7 +772,7 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* HORARIOS / TURNOS ACTUALIZADOS */}
+                          {/* HORARIOS / TURNOS */}
                           <div className="space-y-1 mb-4">
                             <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-400' : 'text-slate-500'}`}>
                               Horarios / Turnos:
@@ -852,7 +816,6 @@ export default function App() {
                                   return null;
                                 })}
 
-                              {/* Si todos sus turnos ya pasaron, mostrar aviso de Turnos Concluidos */}
                               {med.horarios && med.horarios.every(h => obtenerEstadoHorario(h) === 'PASADO') && (
                                 <span className="text-xs italic text-slate-400 font-medium">
                                   Todos los turnos de hoy han concluido
@@ -938,7 +901,7 @@ export default function App() {
             <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
               <h3 className="text-lg font-bold flex items-center gap-2">
                 <SlidersHorizontal className="w-5 h-5 text-cyan-500" />
-                Seleccionar Módulos a Mostrar
+                Seleccionar Módulos
               </h3>
               <button onClick={() => setMostrarModalModulos(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
