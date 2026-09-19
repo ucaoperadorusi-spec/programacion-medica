@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
 import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal } from 'lucide-react';
+import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal, CalendarClock, Shield } from 'lucide-react';
 
-const ADMIN_PIN = "1234";
+// CONFIGURACIÓN DE PINS POR ROL
+const ADMIN_PIN = "1234";      // Acceso Total
+const OPERADOR_PIN = "5678";   // Solo Modificación de Estados
 
 export default function App() {
   const [programacion, setProgramacion] = useState([]);
@@ -29,6 +31,12 @@ export default function App() {
       cardColor: temaClaro ? "bg-emerald-50/70 border-emerald-400 shadow-emerald-500/10" : "bg-emerald-900/20 border-emerald-500/40 shadow-emerald-900/50",
       icon: UserCheck 
     },
+    PROGRAMADO: {
+      label: "Próximo Turno",
+      badge: temaClaro ? "bg-blue-100 text-blue-800 border-blue-300" : "bg-blue-500/20 text-blue-300 border-blue-500/40",
+      cardColor: temaClaro ? "bg-blue-50/40 border-blue-200" : "bg-slate-900/40 border-slate-800",
+      icon: CalendarClock
+    },
     PAUSA: { 
       label: "En Pausa", 
       badge: temaClaro ? "bg-amber-100 text-amber-800 border-amber-400" : "bg-amber-500/20 text-amber-400 border-amber-500/50", 
@@ -47,10 +55,16 @@ export default function App() {
       cardColor: temaClaro ? "bg-cyan-50/80 border-cyan-400 shadow-cyan-500/20 ring-2 ring-cyan-400/50" : "bg-cyan-900/30 border-cyan-400 shadow-cyan-900/50 ring-1 ring-cyan-500/50",
       icon: Bell 
     },
+    CULMINADO: {
+      label: "Turno Culminado",
+      badge: temaClaro ? "bg-slate-200 text-slate-600 border-slate-400" : "bg-slate-800 text-slate-400 border-slate-600",
+      cardColor: temaClaro ? "bg-slate-100/60 border-slate-300 opacity-60" : "bg-slate-900/40 border-slate-800/80 opacity-50",
+      icon: CheckSquare
+    }
   };
 
-  // Autenticación y Modales Admin
-  const [esAdmin, setEsAdmin] = useState(false);
+  // AUTENTICACIÓN Y ROLES: null | 'ADMIN' | 'OPERADOR'
+  const [rolUsuario, setRolUsuario] = useState(null);
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -152,7 +166,17 @@ export default function App() {
     };
   }, [modoTvActivo, modulosSeleccionados, indiceRotacionTv, cicloTv]);
 
-  const cambiarEstadoMedico = async (idsDocs, nuevoEstado) => {
+  const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHora = false) => {
+    if (estaActivo && nuevoEstado === "PROGRAMADO") {
+      alert("No se puede asignar 'Próximo Turno' a un médico que se encuentra actualmente en turno activo de consultorio.");
+      return;
+    }
+
+    if (estaActivo && nuevoEstado === "CULMINADO" && !estaEnUltimaHora) {
+      alert("Solo se puede marcar como CULMINADO dentro de la última hora del turno activo (60 minutos antes de finalizar).");
+      return;
+    }
+
     try {
       const ids = Array.isArray(idsDocs) ? idsDocs : [idsDocs];
       const batch = writeBatch(db);
@@ -243,12 +267,42 @@ export default function App() {
     return horariosArray.some(h => esRangoActivo(h));
   };
 
-  const calcularEstadoInteligente = (med, estaActivoAhora) => {
-    if (!estaActivoAhora) {
-      if (!med.estado || med.estado === "CONSULTA" || med.estado === "LLAMANDO") {
-        return "AUSENTE";
+  // EVALÚA SI AL MÉDICO LE QUEDAN 60 MINUTOS O MENOS PARA TERMINAR SU TURNO ACTIVO
+  const estaEnUltimaHora = (horariosArray) => {
+    if (!horariosArray || horariosArray.length === 0) return false;
+    const ahora = horaActual.getHours() * 60 + horaActual.getMinutes();
+
+    return horariosArray.some(h => {
+      if (obtenerEstadoHorario(h) === 'ACTIVO') {
+        const finMin = obtenerMinutos(h.fin);
+        let diferencia = finMin - ahora;
+        if (diferencia < 0) diferencia += 1440; // Ajuste si cruza medianoche
+        return diferencia <= 60; // 60 minutos o menos
       }
+      return false;
+    });
+  };
+
+  const calcularEstadoInteligente = (med, estaActivoAhora) => {
+    if (!med.horarios || med.horarios.length === 0) return med.estado || "CONSULTA";
+
+    const todosPasados = med.horarios.every(h => obtenerEstadoHorario(h) === 'PASADO');
+    if (todosPasados) return "CULMINADO";
+
+    if (estaActivoAhora) {
+      // Si el médico está en su última hora y se marcó CULMINADO manualmente, respetamos el estado
+      if (med.estado === "CULMINADO" && estaEnUltimaHora(med.horarios)) {
+        return "CULMINADO";
+      }
+      if (med.estado === "PROGRAMADO" || med.estado === "CULMINADO") return "CONSULTA";
+      return med.estado || "CONSULTA";
     }
+
+    const tieneTurnoFuturo = med.horarios.some(h => obtenerEstadoHorario(h) === 'FUTURO');
+    if (tieneTurnoFuturo) {
+      return "PROGRAMADO";
+    }
+
     return med.estado || "CONSULTA";
   };
 
@@ -259,10 +313,16 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
+  // CONTROL DE AUTENTICACIÓN SEGÚN PIN
   const handleLogin = (e) => {
     e.preventDefault();
     if (pinInput === ADMIN_PIN) {
-      setEsAdmin(true);
+      setRolUsuario('ADMIN');
+      setMostrarModalLogin(false);
+      setPinInput('');
+      setErrorPin(false);
+    } else if (pinInput === OPERADOR_PIN) {
+      setRolUsuario('OPERADOR');
       setMostrarModalLogin(false);
       setPinInput('');
       setErrorPin(false);
@@ -271,10 +331,11 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => setEsAdmin(false);
+  const handleLogout = () => setRolUsuario(null);
 
   const guardarComunicado = async (e) => {
     e.preventDefault();
+    if (rolUsuario !== 'ADMIN') return;
     try {
       await setDoc(doc(db, "configuracion", "comunicado"), { mensaje: nuevoComunicado });
       setMostrarModalComunicado(false);
@@ -284,6 +345,7 @@ export default function App() {
   };
 
   const limpiarBaseDatos = async () => {
+    if (rolUsuario !== 'ADMIN') return;
     if (!window.confirm("¿Seguro que deseas eliminar TODA la programación cargada?")) return;
     setCargando(true);
     try {
@@ -300,6 +362,7 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
+    if (rolUsuario !== 'ADMIN') return;
     const file = e.target.files[0];
     if (!file) return;
 
@@ -342,9 +405,24 @@ export default function App() {
           let fechaFormateada = new Date().toLocaleDateString("en-CA");
 
           if (fechaRaw) {
-            const d = new Date(fechaRaw);
-            if (!isNaN(d.getTime())) {
-              fechaFormateada = d.toLocaleDateString("en-CA");
+            if (fechaRaw instanceof Date) {
+              fechaFormateada = new Date(fechaRaw.getTime() - (fechaRaw.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+            } else {
+              const strFecha = String(fechaRaw).trim();
+              if (strFecha.includes('/')) {
+                const partes = strFecha.split('/');
+                if (partes.length === 3) {
+                  const anio = partes[2].length === 2 ? `20${partes[2]}` : partes[2];
+                  fechaFormateada = `${anio}-${partes[1].padStart(2, '0')}-${partes[0].padStart(2, '0')}`;
+                }
+              } else {
+                const d = new Date(strFecha);
+                if (!isNaN(d.getTime())) {
+                  fechaFormateada = d.toISOString().split('T')[0];
+                } else {
+                  fechaFormateada = strFecha;
+                }
+              }
             }
           }
 
@@ -474,12 +552,14 @@ export default function App() {
     return acc;
   }, {});
 
+  const puedeModificarEstados = rolUsuario === 'ADMIN' || rolUsuario === 'OPERADOR';
+
   return (
     <div className={`min-h-screen flex flex-col font-sans overflow-hidden h-screen relative transition-colors duration-300 ${
       temaClaro ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-white'
     }`}>
       
-      {/* Header con Filtros Integrados */}
+      {/* Header */}
       <header className={`px-8 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl z-20 border-b transition-colors ${
         temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
       }`}>
@@ -502,7 +582,6 @@ export default function App() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Botón Filtro Turno Actual subido al Header */}
           <button
             onClick={() => setSoloTurnoActual(!soloTurnoActual)}
             className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
@@ -515,7 +594,6 @@ export default function App() {
             <span>{soloTurnoActual ? "Filtrado: Turno Actual" : "Vista: Todo"}</span>
           </button>
 
-          {/* Selector Módulos */}
           <button
             onClick={() => setMostrarModalModulos(true)}
             className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
@@ -526,7 +604,6 @@ export default function App() {
             <span>Módulos ({modulosSeleccionados.length})</span>
           </button>
 
-          {/* Modo Claro/Oscuro */}
           <button
             onClick={() => setTemaClaro(!temaClaro)}
             className={`p-2.5 rounded-xl border transition flex items-center gap-2 text-xs font-bold ${
@@ -539,7 +616,6 @@ export default function App() {
             {temaClaro ? <Sun className="w-4 h-4 text-amber-600" /> : <Moon className="w-4 h-4 text-blue-400" />}
           </button>
 
-          {/* Modo TV */}
           <button
             onClick={() => {
               if (modulosSeleccionados.length === 0) {
@@ -561,7 +637,6 @@ export default function App() {
             {modoTvActivo ? <Pause className="w-3 h-3 text-cyan-500" /> : <Play className="w-3 h-3 text-slate-400" />}
           </button>
 
-          {/* Reloj */}
           <div className={`flex items-center space-x-2 border px-4 py-2 rounded-xl ${
             temaClaro ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/80 border-slate-700/60'
           }`}>
@@ -571,26 +646,30 @@ export default function App() {
             </span>
           </div>
 
-          {/* Administración */}
-          {esAdmin ? (
+          {rolUsuario ? (
             <div className={`flex items-center space-x-2 p-1.5 rounded-2xl border ${
               temaClaro ? 'bg-slate-100 border-blue-300' : 'bg-slate-800/60 border-blue-500/30'
             }`}>
-              <span className="text-xs font-bold text-emerald-600 px-2 flex items-center gap-1">
-                <CheckCircle className="w-3.5 h-3.5" /> Admin
+              <span className={`text-xs font-bold px-2 flex items-center gap-1 ${
+                rolUsuario === 'ADMIN' ? 'text-emerald-500' : 'text-amber-400'
+              }`}>
+                {rolUsuario === 'ADMIN' ? <CheckCircle className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                {rolUsuario === 'ADMIN' ? 'Admin' : 'Operador'}
               </span>
 
-              <button
-                onClick={() => { setNuevoComunicado(comunicado); setMostrarModalComunicado(true); }}
-                className={`p-2 border rounded-xl transition ${
-                  temaClaro ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50' : 'bg-slate-700 hover:bg-slate-600 text-cyan-300 border-slate-600'
-                }`}
-                title="Editar Anuncio"
-              >
-                <Edit3 className="w-4 h-4" />
-              </button>
+              {rolUsuario === 'ADMIN' && (
+                <button
+                  onClick={() => { setNuevoComunicado(comunicado); setMostrarModalComunicado(true); }}
+                  className={`p-2 border rounded-xl transition ${
+                    temaClaro ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50' : 'bg-slate-700 hover:bg-slate-600 text-cyan-300 border-slate-600'
+                  }`}
+                  title="Editar Anuncio"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              )}
 
-              {programacion.length > 0 && (
+              {rolUsuario === 'ADMIN' && programacion.length > 0 && (
                 <button 
                   onClick={limpiarBaseDatos} 
                   disabled={cargando}
@@ -601,11 +680,13 @@ export default function App() {
                 </button>
               )}
 
-              <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
-                <Upload className="w-4 h-4" />
-                <span>{cargando ? "Cargando Excel..." : "Subir Excel General"}</span>
-                <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
-              </label>
+              {rolUsuario === 'ADMIN' && (
+                <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
+                  <Upload className="w-4 h-4" />
+                  <span>{cargando ? "Cargando Excel..." : "Subir Excel General"}</span>
+                  <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
+                </label>
+              )}
 
               <button
                 onClick={handleLogout}
@@ -623,7 +704,7 @@ export default function App() {
               className={`p-2.5 border rounded-xl transition ${
                 temaClaro ? 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200' : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 border-slate-700/50'
               }`}
-              title="Acceso Administración"
+              title="Acceso Administración / Operador"
             >
               <Lock className="w-4 h-4" />
             </button>
@@ -680,7 +761,6 @@ export default function App() {
                 temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
               }`}>
                 
-                {/* ENCABEZADO DEL MÓDULO */}
                 <div className={`flex items-center justify-between pb-4 border-b mb-6 ${
                   temaClaro ? 'border-slate-200' : 'border-slate-800'
                 }`}>
@@ -707,56 +787,78 @@ export default function App() {
 
                 {/* TARJETAS DE MÉDICOS */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {agrupadoPorModulo[moduloNombre].map((med, mIdx) => {
-                    const estaActivoAhora = estaEnTurno(med.horarios);
-                    const estadoClave = calcularEstadoInteligente(med, estaActivoAhora);
-                    const configEstado = ESTADOS_MEDICO[estadoClave] || ESTADOS_MEDICO.AUSENTE;
-                    const IconoEstado = configEstado.icon;
+                  {[...agrupadoPorModulo[moduloNombre]]
+                    .sort((a, b) => {
+                      const estadoA = calcularEstadoInteligente(a, estaEnTurno(a.horarios));
+                      const estadoB = calcularEstadoInteligente(b, estaEnTurno(b.horarios));
 
-                    return (
-                      <div key={mIdx} className={`p-5 rounded-2xl border flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 ${configEstado.cardColor}`}>
-                        <div>
-                          <div className="flex justify-between items-start mb-2">
-                            <div>
-                              <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
-                                {med.Medico}
-                              </h3>
-                              {med.esReemplazo && med.medicoTitular && (
-                                <p className="text-[11px] text-purple-500 italic font-medium">Reemplaza a: {med.medicoTitular}</p>
+                      const prioridad = {
+                        "LLAMANDO": 1,
+                        "CONSULTA": 2,
+                        "PAUSA": 3,
+                        "AUSENTE": 4,     // Ubicado al final de las consultas activas
+                        "PROGRAMADO": 5,  // Próximos turnos (futuros)
+                        "CULMINADO": 6    // Turnos terminados
+                      };
+
+                      const pesoA = prioridad[estadoA] || 10;
+                      const pesoB = prioridad[estadoB] || 10;
+
+                      if (pesoA === pesoB) {
+                        return (a.Medico || "").localeCompare(b.Medico || "");
+                      }
+
+                      return pesoA - pesoB;
+                    })
+                    .map((med, mIdx) => {
+                      const estaActivoAhora = estaEnTurno(med.horarios);
+                      const enUltimaHora = estaEnUltimaHora(med.horarios);
+                      const estadoClave = calcularEstadoInteligente(med, estaActivoAhora);
+                      const configEstado = ESTADOS_MEDICO[estadoClave] || ESTADOS_MEDICO.PROGRAMADO;
+                      const IconoEstado = configEstado.icon;
+
+                      return (
+                        <div key={mIdx} className={`p-5 rounded-2xl border flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 ${configEstado.cardColor}`}>
+                          <div>
+                            <div className="flex justify-between items-start mb-2">
+                              <div>
+                                <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
+                                  {med.Medico}
+                                </h3>
+                                {med.esReemplazo && med.medicoTitular && (
+                                  <p className="text-[11px] text-purple-500 italic font-medium">Reemplaza a: {med.medicoTitular}</p>
+                                )}
+                              </div>
+
+                              {med.esReemplazo && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-700 border border-purple-400">
+                                  REEMPLAZO
+                                </span>
                               )}
                             </div>
 
-                            {med.esReemplazo && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-700 border border-purple-400">
-                                REEMPLAZO
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2 mb-3">
-                            <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                              temaClaro ? 'bg-slate-100 text-slate-700' : 'bg-slate-800 text-slate-300'
-                            }`}>
-                              {med.Area || "General"}
-                            </span>
-                            {med.Rol && (
-                              <span className={`px-2.5 py-1 rounded-lg text-xs ${
-                                temaClaro ? 'bg-blue-50 text-blue-700 font-medium' : 'bg-blue-900/30 text-blue-300'
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
+                                temaClaro ? 'bg-slate-100 text-slate-700' : 'bg-slate-800 text-slate-300'
                               }`}>
-                                {med.Rol}
+                                {med.Area || "General"}
                               </span>
-                            )}
-                          </div>
+                              {med.Rol && (
+                                <span className={`px-2.5 py-1 rounded-lg text-xs ${
+                                  temaClaro ? 'bg-blue-50 text-blue-700 font-medium' : 'bg-blue-900/30 text-blue-300'
+                                }`}>
+                                  {med.Rol}
+                                </span>
+                              )}
+                            </div>
 
-                          {/* HORARIOS / TURNOS */}
-                          <div className="space-y-1 mb-4">
-                            <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-400' : 'text-slate-500'}`}>
-                              Horarios / Turnos:
-                            </p>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              {med.horarios && med.horarios
-                                .filter(h => obtenerEstadoHorario(h) !== 'PASADO')
-                                .map((h, hIdx) => {
+                            {/* HORARIOS / TURNOS */}
+                            <div className="space-y-1 mb-4">
+                              <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-400' : 'text-slate-500'}`}>
+                                Horarios / Turnos:
+                              </p>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                {med.horarios && med.horarios.map((h, hIdx) => {
                                   const estadoTurno = obtenerEstadoHorario(h);
 
                                   if (estadoTurno === 'ACTIVO') {
@@ -789,78 +891,107 @@ export default function App() {
                                     );
                                   }
 
+                                  if (estadoTurno === 'PASADO') {
+                                    return (
+                                      <div key={hIdx} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs font-medium transition ${
+                                        temaClaro 
+                                          ? 'bg-slate-100 text-slate-500 border-slate-300 opacity-75' 
+                                          : 'bg-slate-800/40 text-slate-400 border-slate-700/60 opacity-60'
+                                      }`}>
+                                        <span className={`text-[10px] uppercase font-sans font-bold px-1 rounded ${
+                                          temaClaro ? 'bg-slate-200 text-slate-600' : 'bg-slate-700 text-slate-400'
+                                        }`}>
+                                          Culminado
+                                        </span>
+                                        <span className="line-through decoration-slate-400/50">{h.inicio} - {h.fin}</span>
+                                      </div>
+                                    );
+                                  }
+
                                   return null;
                                 })}
-
-                              {med.horarios && med.horarios.every(h => obtenerEstadoHorario(h) === 'PASADO') && (
-                                <span className="text-xs italic text-slate-400 font-medium">
-                                  Todos los turnos de hoy han concluido
-                                </span>
-                              )}
+                              </div>
                             </div>
                           </div>
-                        </div>
 
-                        {/* ESTADO Y BOTONES ADMIN */}
-                        <div className="pt-3 border-t border-slate-200/40 dark:border-slate-800/60 space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
-                              <IconoEstado className="w-3.5 h-3.5" />
-                              <span>{configEstado.label}</span>
+                          {/* ESTADO Y ACCIONES DE ROL */}
+                          <div className="pt-3 border-t border-slate-200/40 dark:border-slate-800/60 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
+                                <IconoEstado className="w-3.5 h-3.5" />
+                                <span>{configEstado.label}</span>
+                              </div>
+
+                              {puedeModificarEstados && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setMedicoParaReemplazo(med)}
+                                    className={`p-1.5 rounded-lg border transition ${
+                                      temaClaro ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100' : 'bg-purple-900/30 text-purple-300 border-purple-700/50 hover:bg-purple-800/40'
+                                    }`}
+                                    title="Asignar Reemplazo"
+                                  >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                  </button>
+                                  {med.esReemplazo && (
+                                    <button
+                                      onClick={() => restaurarTitular(med)}
+                                      className={`p-1.5 rounded-lg border transition ${
+                                        temaClaro ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-amber-900/30 text-amber-300 border-amber-700/50 hover:bg-amber-800/40'
+                                      }`}
+                                      title="Restaurar Titular"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
 
-                            {esAdmin && (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => setMedicoParaReemplazo(med)}
-                                  className={`p-1.5 rounded-lg border transition ${
-                                    temaClaro ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100' : 'bg-purple-900/30 text-purple-300 border-purple-700/50 hover:bg-purple-800/40'
-                                  }`}
-                                  title="Asignar Reemplazo"
-                                >
-                                  <UserPlus className="w-3.5 h-3.5" />
-                                </button>
-                                {med.esReemplazo && (
-                                  <button
-                                    onClick={() => restaurarTitular(med)}
-                                    className={`p-1.5 rounded-lg border transition ${
-                                      temaClaro ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-amber-900/30 text-amber-300 border-amber-700/50 hover:bg-amber-800/40'
-                                    }`}
-                                    title="Restaurar Titular"
-                                  >
-                                    <RefreshCw className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                            {/* BOTONES DE CAMBIO DE ESTADO */}
+                            {puedeModificarEstados && (
+                              <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 pt-1">
+                                {Object.keys(ESTADOS_MEDICO).map((key) => {
+                                  const activeState = estadoClave === key;
+
+                                  // LÓGICA DE BLOQUEOS
+                                  let esBloqueado = false;
+                                  let tooltipBloqueo = ESTADOS_MEDICO[key].label;
+
+                                  if (estaActivoAhora && key === "PROGRAMADO") {
+                                    esBloqueado = true;
+                                    tooltipBloqueo = "Deshabilitado: El profesional ya se encuentra atendiendo en turno activo";
+                                  } else if (estaActivoAhora && key === "CULMINADO" && !enUltimaHora) {
+                                    esBloqueado = true;
+                                    tooltipBloqueo = "Habilitado solo dentro de la última hora de la programación (60 min antes de finalizar)";
+                                  }
+
+                                  return (
+                                    <button
+                                      key={key}
+                                      disabled={esBloqueado}
+                                      onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora)}
+                                      title={tooltipBloqueo}
+                                      className={`py-1 text-[10px] font-bold rounded-lg border transition ${
+                                        esBloqueado
+                                          ? 'bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed dark:bg-slate-800/40 dark:text-slate-600 dark:border-slate-800'
+                                          : activeState
+                                            ? 'bg-blue-600 text-white border-blue-600 shadow'
+                                            : temaClaro
+                                              ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 text-slate-200'
+                                      }`}
+                                    >
+                                      {key.slice(0, 4)}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
-
-                          {esAdmin && (
-                            <div className="grid grid-cols-4 gap-1 pt-1">
-                              {Object.keys(ESTADOS_MEDICO).map((key) => {
-                                const activeState = estadoClave === key;
-                                return (
-                                  <button
-                                    key={key}
-                                    onClick={() => cambiarEstadoMedico(med.ids, key)}
-                                    className={`py-1 text-[10px] font-bold rounded-lg border transition ${
-                                      activeState
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow'
-                                        : temaClaro
-                                          ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 text-slate-200'
-                                    }`}
-                                  >
-                                    {key.slice(0, 4)}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
             ))}
@@ -935,7 +1066,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN ADMIN */}
+      {/* MODAL LOGIN MULTI-ROL */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
@@ -944,7 +1075,7 @@ export default function App() {
             <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
               <h3 className="text-lg font-bold flex items-center gap-2">
                 <Lock className="w-5 h-5 text-blue-500" />
-                Acceso Administración
+                Acceso Administrador / Operador
               </h3>
               <button onClick={() => setMostrarModalLogin(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -953,7 +1084,7 @@ export default function App() {
 
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Ingrese PIN de Seguridad:</label>
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Ingrese PIN de Acceso:</label>
                 <input
                   type="password"
                   value={pinInput}
@@ -967,7 +1098,7 @@ export default function App() {
                   }`}
                   autoFocus
                 />
-                {errorPin && <p className="text-red-400 text-xs mt-1 text-center font-semibold">PIN incorrecto. Intente de nuevo.</p>}
+                {errorPin && <p className="text-red-400 text-xs mt-1 text-center font-semibold">PIN no válido. Intente nuevamente.</p>}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
