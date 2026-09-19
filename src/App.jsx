@@ -86,9 +86,16 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Firebase: Escuchar programación en tiempo real (SOLO FECHA DE HOY)
+  // Firebase: Escuchar programación en tiempo real (STRICTAMENTE FECHA DE HOY LOCAL)
   useEffect(() => {
-    const hoy = new Date().toLocaleDateString("en-CA"); 
+    const obtenerFechaHoy = () => {
+      const d = new Date();
+      const offset = d.getTimezoneOffset() * 60000;
+      return new Date(d.getTime() - offset).toISOString().split('T')[0];
+    };
+
+    const hoy = obtenerFechaHoy();
+
     const q = query(
       collection(db, "programacion_medica"),
       where("Fecha", "==", hoy)
@@ -99,7 +106,7 @@ export default function App() {
       setProgramacion(datos);
     });
     return () => unsubscribe();
-  }, []);
+  }, [horaActual.toDateString()]);
 
   // Lista única de Módulos disponibles
   const todosLosModulosDisponibles = Array.from(
@@ -391,6 +398,12 @@ export default function App() {
         const colRef = collection(db, "programacion_medica");
         const modulosDetectados = new Set();
 
+        const obtenerFechaHoyLocal = () => {
+          const d = new Date();
+          const offset = d.getTimezoneOffset() * 60000;
+          return new Date(d.getTime() - offset).toISOString().split('T')[0];
+        };
+
         jsonData.forEach((item) => {
           const medico = getFieldValue(item, ['profesional', 'medico', 'nombre', 'doctor', 'personal']) || "Sin Nombre";
           const area = getFieldValue(item, ['servicio', 'area', 'especialidad', 'departamento']) || "General";
@@ -402,11 +415,12 @@ export default function App() {
           modulosDetectados.add(modulo);
 
           const fechaRaw = getFieldValue(item, ['fecha_programacion', 'fecha', 'date']);
-          let fechaFormateada = new Date().toLocaleDateString("en-CA");
+          let fechaFormateada = obtenerFechaHoyLocal();
 
           if (fechaRaw) {
             if (fechaRaw instanceof Date) {
-              fechaFormateada = new Date(fechaRaw.getTime() - (fechaRaw.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+              const offset = fechaRaw.getTimezoneOffset() * 60000;
+              fechaFormateada = new Date(fechaRaw.getTime() - offset).toISOString().split('T')[0];
             } else {
               const strFecha = String(fechaRaw).trim();
               if (strFecha.includes('/')) {
@@ -418,7 +432,8 @@ export default function App() {
               } else {
                 const d = new Date(strFecha);
                 if (!isNaN(d.getTime())) {
-                  fechaFormateada = d.toISOString().split('T')[0];
+                  const offset = d.getTimezoneOffset() * 60000;
+                  fechaFormateada = new Date(d.getTime() - offset).toISOString().split('T')[0];
                 } else {
                   fechaFormateada = strFecha;
                 }
