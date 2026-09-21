@@ -586,7 +586,7 @@ export default function App() {
             <h1 className={`text-2xl font-black tracking-wide ${
               temaClaro ? 'text-blue-900' : 'bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent'
             }`}>
-              HOSPITAL II PUCALLPA / PROGRAMACIÓN
+              H. II PUCALLPA / PROGRAMACIÓN
             </h1>
             <p className={`text-xs font-medium ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
               {modoTvActivo && moduloActualTv 
@@ -648,7 +648,7 @@ export default function App() {
             }`}
           >
             <Tv className="w-4 h-4 text-cyan-500" />
-            <span>{modoTvActivo ? "TV Automático Activo" : "Modo TV"}</span>
+            <span>{modoTvActivo ? "TV Automático" : "Modo TV"}</span>
             {modoTvActivo ? <Pause className="w-3 h-3 text-cyan-500" /> : <Play className="w-3 h-3 text-slate-400" />}
           </button>
 
