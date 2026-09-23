@@ -698,7 +698,7 @@ export default function App() {
               {rolUsuario === 'ADMIN' && (
                 <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
                   <Upload className="w-4 h-4" />
-                  <span>{cargando ? "Cargando Excel..." : "Subir Excel General"}</span>
+                  <span>{cargando ? "Cargando Excel..." : "Subir Excel"}</span>
                   <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
                 </label>
               )}
