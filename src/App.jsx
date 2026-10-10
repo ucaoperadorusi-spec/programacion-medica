@@ -1,9 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
-import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren } from 'lucide-react';
+import { 
+  Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, 
+  CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
+  Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
+  Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren 
+} from 'lucide-react';
 
 export default function App() {
   const [programacion, setProgramacion] = useState([]);
@@ -13,13 +18,13 @@ export default function App() {
   const [cargando, setCargando] = useState(false);
   const [soloTurnoActual, setSoloTurnoActual] = useState(false);
 
-  // SELECCIÓN DE SERVICIO ACTIVO (CONSULTA EXTERNA VS EMERGENCIA)
+  // Selección de servicio activo (Consulta Externa vs Emergencia)
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
 
-  // MODO TEMA (Oscuro por defecto / Claro)
+  // Modo Tema (Oscuro por defecto / Claro)
   const [temaClaro, setTemaClaro] = useState(false);
 
-  // MÓDULOS VISIBLES SELECCIONADOS
+  // Módulos visibles seleccionados
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
@@ -63,7 +68,7 @@ export default function App() {
     }
   };
 
-  // AUTENTICACIÓN Y ROLES: null | 'ADMIN' | 'OPERADOR'
+  // Autenticación y roles: null | 'ADMIN' | 'OPERADOR'
   const [rolUsuario, setRolUsuario] = useState(null);
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
@@ -113,7 +118,7 @@ export default function App() {
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
   };
 
-  // HELPER: Detectar si un área/rol pertenece a Emergencia
+  // Helper: Detectar si un área o rol pertenece a Emergencia
   const esEspecialidadEmergencia = (area = '', rol = '') => {
     const texto = `${area} ${rol}`.toLowerCase();
     const palabrasClave = ['emergencia', 'triaje', 'shock', 'trauma', 'observacion', 'observación', 'guardia', 'urgencia', 'urgencias'];
@@ -126,12 +131,13 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Firebase: Escuchar estado de Autenticación
+  // Firebase: Persistencia de Sesión y Asignación Estricta de Roles
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const correosAdmin = ['uca.operadorusi@essalud.gob.pe', 'andymsr2000@gmail.com'];
-        if (correosAdmin.includes(user.email.toLowerCase())) {
+      if (user && user.email) {
+        // Únicamente los correos en correosAdmin serán ADMIN. Los demás serán OPERADOR.
+        const correosAdmin = ['andymsr2000@gmail.com'];
+        if (correosAdmin.includes(user.email.toLowerCase().trim())) {
           setRolUsuario('ADMIN');
         } else {
           setRolUsuario('OPERADOR');
@@ -145,16 +151,14 @@ export default function App() {
 
   // Firebase: Escuchar programación en tiempo real
   useEffect(() => {
-    // FIX: Se removió el "where(Fecha)" estricto para visualizar todo y debuggear
     const q = collection(db, "programacion_medica");
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      console.log("Registros descargados de Firebase:", datos); // Revisa F12 Console
       setProgramacion(datos);
     });
     return () => unsubscribe();
-  }, []); // Dependencia vacía para que no parpadee al cambiar la hora
+  }, []);
 
   // Lista única de Módulos disponibles
   const todosLosModulosDisponibles = Array.from(
@@ -168,7 +172,7 @@ export default function App() {
     }
   }, [programacion]);
 
-  // Firebase: Escuchar comunicado
+  // Firebase: Escuchar comunicado en tiempo real
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "configuracion"), (snapshot) => {
       snapshot.docs.forEach(d => {
@@ -292,7 +296,6 @@ export default function App() {
     }
   };
 
-  // FUNCIONES DE EDICIÓN Y CREACIÓN MANUAL POR ADMIN
   const abrirModalEditar = (med) => {
     setMedicoParaEditar(med);
     const tipoServ = med.TipoServicio || (esEspecialidadEmergencia(med.Area, med.Rol) ? 'EMERGENCIA' : 'CONSULTA_EXTERNA');
@@ -464,16 +467,18 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
-  // CONTROL DE AUTENTICACIÓN SEGÚN FIREBASE AUTH
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, emailInput, passwordInput);
+      const cleanEmail = emailInput.trim().toLowerCase();
+      const cleanPassword = passwordInput.trim();
+
+      const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
       const user = userCredential.user;
 
-      const correosAdmin = ['uca.operadorusi@essalud.gob.pe', 'andymsr2000@gmail.com'];
+      const correosAdmin = ['andymsr2000@gmail.com'];
       if (correosAdmin.includes(user.email.toLowerCase())) {
         setRolUsuario('ADMIN');
       } else {
@@ -557,18 +562,27 @@ export default function App() {
         const modulosDetectados = new Set();
 
         jsonData.forEach((item) => {
-          const medico = getFieldValue(item, ['profesional', 'medico', 'nombre', 'doctor', 'personal']) || "Sin Nombre";
-          const area = getFieldValue(item, ['servicio', 'area', 'especialidad', 'departamento']) || "General";
+          const medico = getFieldValue(item, [
+            'profesional', 'medico', 'nombre', 'doctor', 'personal', 'medico_titular', 'cmp'
+          ]) || "Sin Nombre";
+
+          const area = getFieldValue(item, [
+            'servicio', 'area', 'especialidad', 'departamento', 'unidad'
+          ]) || "General";
           
-          // FIX: Búsqueda amplia para asegurar que guarde el Rol (Subactividad)
-          const rol = getFieldValue(item, ['subactividad', 'rol', 'cargo', 'funcion', 'puesto', 'actividad']) || "Consulta Médica";
+          const rol = getFieldValue(item, [
+            'subactividad', 'rol', 'cargo', 'funcion', 'puesto', 'actividad', 
+            'actividad_medica', 'descripcion', 'tarea', 'atencion', 'tipo_actividad'
+          ]) || "Consulta Médica";
           
-          let modulo = getFieldValue(item, ['modulo', 'ubicacion', 'piso', 'pabellon', 'bloque', 'consultorio']);
+          let modulo = getFieldValue(item, [
+            'modulo', 'ubicacion', 'piso', 'pabellon', 'bloque', 'consultorio', 'sector'
+          ]);
           modulo = (!modulo || String(modulo).trim() === "") ? "Módulo General" : String(modulo).trim();
 
           modulosDetectados.add(modulo);
 
-          const fechaRaw = getFieldValue(item, ['fecha_programacion', 'fecha', 'date']);
+          const fechaRaw = getFieldValue(item, ['fecha_programacion', 'fecha', 'date', 'f_prog']);
           let fechaFormateada = obtenerFechaHoyLocal();
 
           if (fechaRaw) {
@@ -595,7 +609,7 @@ export default function App() {
             }
           }
 
-          const turnoRaw = getFieldValue(item, ['turno']) || "";
+          const turnoRaw = getFieldValue(item, ['turno', 'horario', 'rangohora']) || "";
           let hInicio = "--:--", hFin = "--:--";
 
           if (turnoRaw && String(turnoRaw).includes('-')) {
@@ -603,8 +617,8 @@ export default function App() {
             hInicio = partes[0].trim();
             hFin = partes[1].trim();
           } else {
-            hInicio = getFieldValue(item, ['hora_inicio', 'inicio', 'desde']) || "--:--";
-            hFin = getFieldValue(item, ['hora_fin', 'fin', 'hasta']) || "--:--";
+            hInicio = getFieldValue(item, ['hora_inicio', 'inicio', 'desde', 'h_inicio']) || "--:--";
+            hFin = getFieldValue(item, ['hora_fin', 'fin', 'hasta', 'h_fin']) || "--:--";
           }
 
           const servicioExcel = getFieldValue(item, ['tiposervicio', 'tipo_servicio', 'servicio_tipo', 'servicio_activo']);
@@ -675,11 +689,13 @@ export default function App() {
       programacion.forEach((item) => {
         const nombreMedico = (item.Medico || "Sin Nombre").toLowerCase().trim();
         const key = `${item.Modulo || "Módulo General"}_${item.Area || "General"}_${nombreMedico}`;
+        const rolLimpio = item.Rol || "Consulta Médica";
 
         if (!mapaMedicos.has(key)) {
           mapaMedicos.set(key, {
             ...item,
-            Rol: item.Rol || "Consulta Médica", // FIX: Aseguramos que el Rol se retenga al agrupar
+            Rol: rolLimpio,
+            rolesLista: [rolLimpio],
             ids: [item.id],
             horarios: [{ inicio: item.Hora_Inicio || "--:--", fin: item.Hora_Fin || "--:--" }]
           });
@@ -687,6 +703,11 @@ export default function App() {
           const existente = mapaMedicos.get(key);
           existente.ids.push(item.id);
           
+          if (!existente.rolesLista.includes(rolLimpio)) {
+            existente.rolesLista.push(rolLimpio);
+            existente.Rol = existente.rolesLista.join(" / ");
+          }
+
           const hInicio = item.Hora_Inicio || "--:--";
           const hFin = item.Hora_Fin || "--:--";
 
@@ -717,7 +738,7 @@ export default function App() {
     }
   }, [programacion]);
 
-  // FILTRADO CON SERVICIO ACTIVO (CONSULTA EXTERNA VS EMERGENCIA)
+  // Filtrado según el servicio activo (Consulta Externa vs Emergencia)
   const datosFiltrados = programacionAgrupada.filter(item => {
     const mod = item.Modulo || "Módulo General";
     
@@ -752,7 +773,7 @@ export default function App() {
       temaClaro ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-white'
     }`}>
       
-      {/* Header */}
+      {/* Header Superior */}
       <header className={`px-8 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl z-20 border-b transition-colors ${
         temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
       }`}>
@@ -780,7 +801,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* PESTAÑAS PRINCIPALES */}
+        {/* Pestañas Principales */}
         <div className={`flex p-1 rounded-2xl border transition ${
           temaClaro ? 'bg-slate-100 border-slate-300' : 'bg-slate-800/80 border-slate-700'
         }`}>
@@ -885,7 +906,7 @@ export default function App() {
                 {rolUsuario === 'ADMIN' ? 'Admin' : 'Operador'}
               </span>
 
-              {/* ACCIONES EXCLUSIVAS DE ADMIN */}
+              {/* Botones exclusivos para Administrador */}
               {rolUsuario === 'ADMIN' && (
                 <>
                   <button
@@ -954,7 +975,7 @@ export default function App() {
               className={`p-2.5 border rounded-xl transition ${
                 temaClaro ? 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200' : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 border-slate-700/50'
               }`}
-              title="Acceso Administración / Operador"
+              title="Acceso Administrador / Operador"
             >
               <Lock className="w-4 h-4" />
             </button>
@@ -962,7 +983,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* MARQUEE COMUNICADO */}
+      {/* Marquee del Comunicado Informativo */}
       {comunicado && (
         <div className={`py-2 px-4 border-b flex items-center gap-3 overflow-hidden ${
           temaClaro ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-blue-950/40 border-blue-900/50 text-blue-300'
@@ -991,7 +1012,7 @@ export default function App() {
         </div>
       )}
 
-      {/* VISTA PRINCIPAL */}
+      {/* Vista Principal de la Programación */}
       <main ref={mainScrollRef} className="flex-1 p-8 overflow-y-auto relative">
         {Object.keys(agrupadoPorModulo).length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4">
@@ -1041,7 +1062,7 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* TARJETAS DE MÉDICOS */}
+                {/* Tarjetas de los Médicos */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {[...agrupadoPorModulo[moduloNombre]]
                     .sort((a, b) => {
@@ -1093,7 +1114,7 @@ export default function App() {
                                   </span>
                                 )}
 
-                                {/* BOTÓN DE EDICIÓN EXCLUSIVO ADMIN */}
+                                {/* Lápiz y Basurero solo para Admin */}
                                 {rolUsuario === 'ADMIN' && (
                                   <>
                                     <button
@@ -1118,6 +1139,7 @@ export default function App() {
                               </div>
                             </div>
 
+                            {/* Área y Rol / Subactividad */}
                             <div className="flex flex-wrap items-center gap-2 mb-3">
                               <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
                                 temaClaro ? 'bg-slate-100 text-slate-700' : 'bg-slate-800 text-slate-300'
@@ -1133,7 +1155,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* HORARIOS / TURNOS */}
+                            {/* Horarios de Atención */}
                             <div className="space-y-1 mb-4">
                               <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-400' : 'text-slate-500'}`}>
                                 Horarios / Turnos:
@@ -1197,7 +1219,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* ESTADO Y ACCIONES DE ROL */}
+                          {/* Control de Estados y Reemplazos (Habilitado tanto para Operador como Admin) */}
                           <div className="pt-3 border-t border-slate-200/40 dark:border-slate-800/60 space-y-3">
                             <div className="flex items-center justify-between">
                               <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
@@ -1231,7 +1253,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* BOTONES DE CAMBIO DE ESTADO */}
+                            {/* Botones de cambio manual de estado */}
                             {puedeModificarEstados && (
                               <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 pt-1">
                                 {Object.keys(ESTADOS_MEDICO).map((key) => {
@@ -1281,7 +1303,7 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL EDITAR CAMPOS DE PROGRAMACIÓN (ADMIN) */}
+      {/* Modal: Editar Registro Médico (ADMIN) */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1440,7 +1462,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL CREAR NUEVO REGISTRO MANUAL (ADMIN) */}
+      {/* Modal: Crear Nuevo Registro Manual (ADMIN) */}
       {mostrarModalNuevoRegistro && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1603,7 +1625,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL SELECCIÓN DE MÓDULOS */}
+      {/* Modal: Selección de Módulos */}
       {mostrarModalModulos && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1670,7 +1692,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN CON FIREBASE AUTH */}
+      {/* Modal: Login de Autenticación con Firebase */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
@@ -1746,7 +1768,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL EDITAR COMUNICADO */}
+      {/* Modal: Editar Comunicado */}
       {mostrarModalComunicado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1796,7 +1818,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL REEMPLAZO DE EMERGENCIA */}
+      {/* Modal: Reemplazo de Emergencia */}
       {medicoParaReemplazo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
