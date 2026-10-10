@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from './firebase';
-import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal, CalendarClock, Shield } from 'lucide-react';
+import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren } from 'lucide-react';
 
 // CONFIGURACIÓN DE PINS POR ROL
 const ADMIN_PIN = "1234";      // Acceso Total
@@ -15,6 +15,9 @@ export default function App() {
   const [horaActual, setHoraActual] = useState(new Date());
   const [cargando, setCargando] = useState(false);
   const [soloTurnoActual, setSoloTurnoActual] = useState(false);
+
+  // SELECCIÓN DE SERVICIO ACTIVO (CONSULTA EXTERNA VS EMERGENCIA)
+  const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
 
   // MODO TEMA (Oscuro por defecto / Claro)
   const [temaClaro, setTemaClaro] = useState(false);
@@ -74,11 +77,50 @@ export default function App() {
   const [medicoParaReemplazo, setMedicoParaReemplazo] = useState(null);
   const [nombreReemplazo, setNombreReemplazo] = useState('');
 
+  // Modal para Editar Campos de la Programación (ADMIN)
+  const [medicoParaEditar, setMedicoParaEditar] = useState(null);
+  const [formEdicion, setFormEdicion] = useState({
+    Medico: '',
+    Area: '',
+    Rol: '',
+    Modulo: '',
+    Hora_Inicio: '',
+    Hora_Fin: '',
+    Fecha: '',
+    TipoServicio: 'CONSULTA_EXTERNA'
+  });
+
+  // Modal para Agregar Nuevo Registro Manual (ADMIN) - Sin autorrelleno de horas ni textos
+  const [mostrarModalNuevoRegistro, setMostrarModalNuevoRegistro] = useState(false);
+  const [formNuevo, setFormNuevo] = useState({
+    Medico: '',
+    Area: '',
+    Rol: '',
+    Modulo: '',
+    Hora_Inicio: '',
+    Hora_Fin: '',
+    Fecha: '',
+    TipoServicio: 'CONSULTA_EXTERNA'
+  });
+
   // Modo TV Inteligente
   const [modoTvActivo, setModoTvActivo] = useState(false);
   const [indiceRotacionTv, setIndiceRotacionTv] = useState(0);
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
+
+  const obtenerFechaHoyLocal = () => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().split('T')[0];
+  };
+
+  // HELPER: Detectar si un área/rol pertenece a Emergencia
+  const esEspecialidadEmergencia = (area = '', rol = '') => {
+    const texto = `${area} ${rol}`.toLowerCase();
+    const palabrasClave = ['emergencia', 'triaje', 'shock', 'trauma', 'observacion', 'observación', 'guardia', 'urgencia', 'urgencias'];
+    return palabrasClave.some(p => texto.includes(p));
+  };
 
   // Reloj de alta precisión
   useEffect(() => {
@@ -86,15 +128,9 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Firebase: Escuchar programación en tiempo real (STRICTAMENTE FECHA DE HOY LOCAL)
+  // Firebase: Escuchar programación en tiempo real (FECHA DE HOY LOCAL)
   useEffect(() => {
-    const obtenerFechaHoy = () => {
-      const d = new Date();
-      const offset = d.getTimezoneOffset() * 60000;
-      return new Date(d.getTime() - offset).toISOString().split('T')[0];
-    };
-
-    const hoy = obtenerFechaHoy();
+    const hoy = obtenerFechaHoyLocal();
 
     const q = query(
       collection(db, "programacion_medica"),
@@ -244,6 +280,104 @@ export default function App() {
     }
   };
 
+  // FUNCIONES DE EDICIÓN Y CREACIÓN MANUAL POR ADMIN
+  const abrirModalEditar = (med) => {
+    setMedicoParaEditar(med);
+    const tipoServ = med.TipoServicio || (esEspecialidadEmergencia(med.Area, med.Rol) ? 'EMERGENCIA' : 'CONSULTA_EXTERNA');
+    setFormEdicion({
+      Medico: med.Medico || '',
+      Area: med.Area || '',
+      Rol: med.Rol || '',
+      Modulo: med.Modulo || '',
+      Hora_Inicio: med.horarios?.[0]?.inicio || med.Hora_Inicio || '',
+      Hora_Fin: med.horarios?.[0]?.fin || med.Hora_Fin || '',
+      Fecha: med.Fecha || obtenerFechaHoyLocal(),
+      TipoServicio: tipoServ
+    });
+  };
+
+  const guardarEdicionRegistro = async (e) => {
+    e.preventDefault();
+    if (rolUsuario !== 'ADMIN' || !medicoParaEditar) return;
+
+    try {
+      const ids = Array.isArray(medicoParaEditar.ids) ? medicoParaEditar.ids : [medicoParaEditar.id];
+      const batch = writeBatch(db);
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          Medico: formEdicion.Medico.trim(),
+          Area: formEdicion.Area.trim(),
+          Rol: formEdicion.Rol.trim(),
+          Modulo: formEdicion.Modulo.trim(),
+          Hora_Inicio: formEdicion.Hora_Inicio.trim(),
+          Hora_Fin: formEdicion.Hora_Fin.trim(),
+          Fecha: formEdicion.Fecha,
+          TipoServicio: formEdicion.TipoServicio
+        });
+      });
+
+      await batch.commit();
+      setMedicoParaEditar(null);
+    } catch (err) {
+      console.error("Error al editar programación:", err);
+      alert("Ocurrió un error al guardar los cambios.");
+    }
+  };
+
+  const eliminarRegistroIndividual = async (med) => {
+    if (rolUsuario !== 'ADMIN') return;
+    if (!window.confirm(`¿Seguro que deseas eliminar la programación de "${med.Medico}"?`)) return;
+
+    try {
+      const ids = Array.isArray(med.ids) ? med.ids : [med.id];
+      const batch = writeBatch(db);
+      ids.forEach(idDoc => {
+        batch.delete(doc(db, "programacion_medica", idDoc));
+      });
+      await batch.commit();
+    } catch (err) {
+      console.error("Error al eliminar registro:", err);
+      alert("Error al eliminar el registro.");
+    }
+  };
+
+  const guardarNuevoRegistro = async (e) => {
+    e.preventDefault();
+    if (rolUsuario !== 'ADMIN') return;
+
+    try {
+      const colRef = collection(db, "programacion_medica");
+      await addDoc(colRef, {
+        Modulo: formNuevo.Modulo.trim() || "Módulo General",
+        Area: formNuevo.Area.trim() || "General",
+        Medico: formNuevo.Medico.trim() || "Sin Nombre",
+        Rol: formNuevo.Rol.trim() || "Consulta Médica",
+        Fecha: formNuevo.Fecha || obtenerFechaHoyLocal(),
+        Hora_Inicio: formNuevo.Hora_Inicio.trim() || "--:--",
+        Hora_Fin: formNuevo.Hora_Fin.trim() || "--:--",
+        TipoServicio: formNuevo.TipoServicio || servicioActivo,
+        estado: "CONSULTA"
+      });
+
+      setMostrarModalNuevoRegistro(false);
+      setFormNuevo({
+        Medico: '',
+        Area: '',
+        Rol: '',
+        Modulo: '',
+        Hora_Inicio: '',
+        Hora_Fin: '',
+        Fecha: obtenerFechaHoyLocal(),
+        TipoServicio: servicioActivo
+      });
+    } catch (err) {
+      console.error("Error al agregar registro:", err);
+      alert("Error al guardar el nuevo registro.");
+    }
+  };
+
   const obtenerMinutos = (horaStr) => {
     if (!horaStr || horaStr === "--:--") return 0;
     const [h, m] = horaStr.split(':').map(Number);
@@ -274,7 +408,6 @@ export default function App() {
     return horariosArray.some(h => esRangoActivo(h));
   };
 
-  // EVALÚA SI AL MÉDICO LE QUEDAN 60 MINUTOS O MENOS PARA TERMINAR SU TURNO ACTIVO
   const estaEnUltimaHora = (horariosArray) => {
     if (!horariosArray || horariosArray.length === 0) return false;
     const ahora = horaActual.getHours() * 60 + horaActual.getMinutes();
@@ -283,8 +416,8 @@ export default function App() {
       if (obtenerEstadoHorario(h) === 'ACTIVO') {
         const finMin = obtenerMinutos(h.fin);
         let diferencia = finMin - ahora;
-        if (diferencia < 0) diferencia += 1440; // Ajuste si cruza medianoche
-        return diferencia <= 60; // 60 minutos o menos
+        if (diferencia < 0) diferencia += 1440;
+        return diferencia <= 60;
       }
       return false;
     });
@@ -297,7 +430,6 @@ export default function App() {
     if (todosPasados) return "CULMINADO";
 
     if (estaActivoAhora) {
-      // Si el médico está en su última hora y se marcó CULMINADO manualmente, respetamos el estado
       if (med.estado === "CULMINADO" && estaEnUltimaHora(med.horarios)) {
         return "CULMINADO";
       }
@@ -398,12 +530,6 @@ export default function App() {
         const colRef = collection(db, "programacion_medica");
         const modulosDetectados = new Set();
 
-        const obtenerFechaHoyLocal = () => {
-          const d = new Date();
-          const offset = d.getTimezoneOffset() * 60000;
-          return new Date(d.getTime() - offset).toISOString().split('T')[0];
-        };
-
         jsonData.forEach((item) => {
           const medico = getFieldValue(item, ['profesional', 'medico', 'nombre', 'doctor', 'personal']) || "Sin Nombre";
           const area = getFieldValue(item, ['servicio', 'area', 'especialidad', 'departamento']) || "General";
@@ -453,6 +579,19 @@ export default function App() {
             hFin = getFieldValue(item, ['hora_fin', 'fin', 'hasta']) || "--:--";
           }
 
+          // Detección explícita de servicio sin forzar autorrelleno si viene especificado
+          const servicioExcel = getFieldValue(item, ['tiposervicio', 'tipo_servicio', 'servicio_tipo', 'servicio_activo']);
+          let tipoServicioFinal = 'CONSULTA_EXTERNA';
+
+          if (servicioExcel && String(servicioExcel).toUpperCase().includes('EMERG')) {
+            tipoServicioFinal = 'EMERGENCIA';
+          } else if (servicioExcel && (String(servicioExcel).toUpperCase().includes('CONSULTA') || String(servicioExcel).toUpperCase().includes('EXTERNA'))) {
+            tipoServicioFinal = 'CONSULTA_EXTERNA';
+          } else {
+            const esEmerg = esEspecialidadEmergencia(String(area), String(rol));
+            tipoServicioFinal = esEmerg ? 'EMERGENCIA' : 'CONSULTA_EXTERNA';
+          }
+
           if (medico !== "Sin Nombre" || area !== "General") {
             const newDocRef = doc(colRef);
             batchInsert.set(newDocRef, {
@@ -463,6 +602,7 @@ export default function App() {
               Fecha: fechaFormateada,
               Hora_Inicio: String(hInicio).trim(),
               Hora_Fin: String(hFin).trim(),
+              TipoServicio: tipoServicioFinal,
               estado: "CONSULTA"
             });
           }
@@ -549,12 +689,22 @@ export default function App() {
     }
   }, [programacion]);
 
+  // FILTRADO CON SERVICIO ACTIVO (CONSULTA EXTERNA VS EMERGENCIA)
   const datosFiltrados = programacionAgrupada.filter(item => {
     const mod = item.Modulo || "Módulo General";
     
+    // 1. Filtrar por tipo de Servicio (Consulta Externa vs Emergencia)
+    const esEmerg = item.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(item.Area, item.Rol);
+    if (servicioActivo === 'EMERGENCIA' && !esEmerg) return false;
+    if (servicioActivo === 'CONSULTA_EXTERNA' && esEmerg) return false;
+
+    // 2. Filtro Modo TV
     if (modoTvActivo && mod !== moduloActualTv) return false;
+    
+    // 3. Filtro Módulos Seleccionados
     if (!modoTvActivo && !modulosSeleccionados.includes(mod)) return false;
 
+    // 4. Filtro Turno Actual
     if (soloTurnoActual && !estaEnTurno(item.horarios)) return false;
 
     return true;
@@ -579,14 +729,20 @@ export default function App() {
         temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
       }`}>
         <div className="flex items-center space-x-4">
-          <div className="p-3 bg-blue-600 rounded-2xl shadow-lg shadow-blue-500/20">
-            <Building2 className="w-8 h-8 text-white" />
+          <div className={`p-3 rounded-2xl shadow-lg transition-colors ${
+            servicioActivo === 'EMERGENCIA' 
+              ? 'bg-rose-600 shadow-rose-600/30 animate-pulse' 
+              : 'bg-blue-600 shadow-blue-500/20'
+          }`}>
+            {servicioActivo === 'EMERGENCIA' ? <Siren className="w-8 h-8 text-white" /> : <Building2 className="w-8 h-8 text-white" />}
           </div>
           <div>
             <h1 className={`text-2xl font-black tracking-wide ${
-              temaClaro ? 'text-blue-900' : 'bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent'
+              servicioActivo === 'EMERGENCIA'
+                ? 'bg-gradient-to-r from-rose-500 to-amber-400 bg-clip-text text-transparent'
+                : temaClaro ? 'text-blue-900' : 'bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent'
             }`}>
-              H. II PUCALLPA / PROGRAMACIÓN
+              H. II PUCALLPA / {servicioActivo === 'EMERGENCIA' ? 'SERVICIO DE EMERGENCIA 24H' : 'CONSULTA EXTERNA'}
             </h1>
             <p className={`text-xs font-medium ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
               {modoTvActivo && moduloActualTv 
@@ -594,6 +750,35 @@ export default function App() {
                 : `Mostrando ${modulosSeleccionados.length} de ${todosLosModulosDisponibles.length} módulo(s)`}
             </p>
           </div>
+        </div>
+
+        {/* PESTAÑAS PRINCIPALES: CONSULTA EXTERNA / EMERGENCIA */}
+        <div className={`flex p-1 rounded-2xl border transition ${
+          temaClaro ? 'bg-slate-100 border-slate-300' : 'bg-slate-800/80 border-slate-700'
+        }`}>
+          <button
+            onClick={() => setServicioActivo('CONSULTA_EXTERNA')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              servicioActivo === 'CONSULTA_EXTERNA'
+                ? 'bg-blue-600 text-white shadow-lg'
+                : temaClaro ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Consulta Externa</span>
+          </button>
+
+          <button
+            onClick={() => setServicioActivo('EMERGENCIA')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              servicioActivo === 'EMERGENCIA'
+                ? 'bg-rose-600 text-white shadow-lg'
+                : temaClaro ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Siren className="w-4 h-4 text-rose-400" />
+            <span>Emergencia 24H</span>
+          </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -672,35 +857,57 @@ export default function App() {
                 {rolUsuario === 'ADMIN' ? 'Admin' : 'Operador'}
               </span>
 
+              {/* ACCIONES EXCLUSIVAS DE ADMIN */}
               {rolUsuario === 'ADMIN' && (
-                <button
-                  onClick={() => { setNuevoComunicado(comunicado); setMostrarModalComunicado(true); }}
-                  className={`p-2 border rounded-xl transition ${
-                    temaClaro ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50' : 'bg-slate-700 hover:bg-slate-600 text-cyan-300 border-slate-600'
-                  }`}
-                  title="Editar Anuncio"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-              )}
+                <>
+                  <button
+                    onClick={() => {
+                      setFormNuevo({
+                        Medico: '',
+                        Area: '',
+                        Rol: '',
+                        Modulo: '',
+                        Hora_Inicio: '',
+                        Hora_Fin: '',
+                        Fecha: obtenerFechaHoyLocal(),
+                        TipoServicio: servicioActivo
+                      });
+                      setMostrarModalNuevoRegistro(true);
+                    }}
+                    className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-semibold transition shadow-lg"
+                    title="Agregar Nuevo Registro Manual"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Nuevo Registro</span>
+                  </button>
 
-              {rolUsuario === 'ADMIN' && programacion.length > 0 && (
-                <button 
-                  onClick={limpiarBaseDatos} 
-                  disabled={cargando}
-                  className="p-2 bg-red-100 hover:bg-red-200 text-red-700 border border-red-300 rounded-xl transition"
-                  title="Limpiar base de datos"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
+                  <button
+                    onClick={() => { setNuevoComunicado(comunicado); setMostrarModalComunicado(true); }}
+                    className={`p-2 border rounded-xl transition ${
+                      temaClaro ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50' : 'bg-slate-700 hover:bg-slate-600 text-cyan-300 border-slate-600'
+                    }`}
+                    title="Editar Anuncio"
+                  >
+                    <Edit3 className="w-4 h-4" />
+                  </button>
 
-              {rolUsuario === 'ADMIN' && (
-                <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
-                  <Upload className="w-4 h-4" />
-                  <span>{cargando ? "Cargando Excel..." : "Subir Excel"}</span>
-                  <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
-                </label>
+                  {programacion.length > 0 && (
+                    <button 
+                      onClick={limpiarBaseDatos} 
+                      disabled={cargando}
+                      className="p-2 bg-red-100 hover:bg-red-200 text-red-700 border border-red-300 rounded-xl transition"
+                      title="Limpiar toda la base de datos"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
+                    <Upload className="w-4 h-4" />
+                    <span>{cargando ? "Cargando Excel..." : "Subir Excel"}</span>
+                    <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
+                  </label>
+                </>
               )}
 
               <button
@@ -763,10 +970,10 @@ export default function App() {
             <Activity className="w-16 h-16 text-slate-400 animate-bounce" />
             <p className="text-xl font-medium text-center">
               {modulosSeleccionados.length === 0
-                ? "No hay ningún módulo seleccionado. Haz clic en 'Módulos a Mostrar' arriba para activarlos."
+                ? "No hay ningún módulo seleccionado. Haz clic en 'Módulos' arriba para activarlos."
                 : soloTurnoActual 
-                  ? "No hay personal médico atendiendo en este turno en los módulos seleccionados." 
-                  : "No hay programación cargada para la fecha de hoy en los módulos seleccionados."}
+                  ? `No hay personal médico atendiendo en este momento en ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'}.` 
+                  : `No hay programación cargada para el área de ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'} en la fecha de hoy.`}
             </p>
           </div>
         ) : (
@@ -780,15 +987,21 @@ export default function App() {
                   temaClaro ? 'border-slate-200' : 'border-slate-800'
                 }`}>
                   <div className="flex items-center space-x-3">
-                    <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl text-cyan-500">
+                    <div className={`p-2.5 rounded-2xl border ${
+                      servicioActivo === 'EMERGENCIA'
+                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-500'
+                        : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-500'
+                    }`}>
                       <MapPin className="w-6 h-6" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-black text-cyan-500 tracking-wide uppercase">
+                      <h2 className={`text-xl font-black tracking-wide uppercase ${
+                        servicioActivo === 'EMERGENCIA' ? 'text-rose-500' : 'text-cyan-500'
+                      }`}>
                         {moduloNombre}
                       </h2>
                       <p className={`text-xs ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
-                        Área de Atención y Consultorios Asignados
+                        {servicioActivo === 'EMERGENCIA' ? 'Área de Emergencia y Guardias' : 'Área de Atención y Consultorios Asignados'}
                       </p>
                     </div>
                   </div>
@@ -811,9 +1024,9 @@ export default function App() {
                         "LLAMANDO": 1,
                         "CONSULTA": 2,
                         "PAUSA": 3,
-                        "AUSENTE": 4,     // Ubicado al final de las consultas activas
-                        "PROGRAMADO": 5,  // Próximos turnos (futuros)
-                        "CULMINADO": 6    // Turnos terminados
+                        "AUSENTE": 4,
+                        "PROGRAMADO": 5,
+                        "CULMINADO": 6
                       };
 
                       const pesoA = prioridad[estadoA] || 10;
@@ -845,11 +1058,36 @@ export default function App() {
                                 )}
                               </div>
 
-                              {med.esReemplazo && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-700 border border-purple-400">
-                                  REEMPLAZO
-                                </span>
-                              )}
+                              <div className="flex items-center gap-1">
+                                {med.esReemplazo && (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-700 border border-purple-400">
+                                    REEMPLAZO
+                                  </span>
+                                )}
+
+                                {/* BOTÓN DE EDICIÓN EXCLUSIVO ADMIN */}
+                                {rolUsuario === 'ADMIN' && (
+                                  <>
+                                    <button
+                                      onClick={() => abrirModalEditar(med)}
+                                      className={`p-1.5 rounded-lg border transition ${
+                                        temaClaro ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
+                                      }`}
+                                      title="Editar Campos del Registro"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => eliminarRegistroIndividual(med)}
+                                      className="p-1.5 rounded-lg border bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20 transition"
+                                      title="Eliminar este Registro"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -879,11 +1117,13 @@ export default function App() {
                                   if (estadoTurno === 'ACTIVO') {
                                     return (
                                       <div key={hIdx} className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono text-xs font-bold ring-2 shadow-sm animate-pulse ${
-                                        temaClaro 
-                                          ? 'bg-cyan-100 text-cyan-800 border-cyan-400 ring-cyan-400/40' 
-                                          : 'bg-cyan-500/20 text-cyan-300 border-cyan-400 ring-cyan-400/40'
+                                        servicioActivo === 'EMERGENCIA'
+                                          ? 'bg-rose-500/20 text-rose-300 border-rose-400 ring-rose-400/40'
+                                          : temaClaro 
+                                            ? 'bg-cyan-100 text-cyan-800 border-cyan-400 ring-cyan-400/40' 
+                                            : 'bg-cyan-500/20 text-cyan-300 border-cyan-400 ring-cyan-400/40'
                                       }`}>
-                                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+                                        <span className={`w-2 h-2 rounded-full animate-ping ${servicioActivo === 'EMERGENCIA' ? 'bg-rose-400' : 'bg-cyan-400'}`} />
                                         <span>{h.inicio} - {h.fin}</span>
                                       </div>
                                     );
@@ -969,7 +1209,6 @@ export default function App() {
                                 {Object.keys(ESTADOS_MEDICO).map((key) => {
                                   const activeState = estadoClave === key;
 
-                                  // LÓGICA DE BLOQUEOS
                                   let esBloqueado = false;
                                   let tooltipBloqueo = ESTADOS_MEDICO[key].label;
 
@@ -1013,6 +1252,328 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* MODAL EDITAR CAMPOS DE PROGRAMACIÓN (ADMIN) */}
+      {medicoParaEditar && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-blue-500" />
+                Modificar Programación Médica
+              </h3>
+              <button onClick={() => setMedicoParaEditar(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={guardarEdicionRegistro} autoComplete="off" className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Servicio / Área Principal:</label>
+                  <select
+                    value={formEdicion.TipoServicio}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, TipoServicio: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  >
+                    <option value="CONSULTA_EXTERNA">Consulta Externa</option>
+                    <option value="EMERGENCIA">Emergencia 24H</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Médico / Profesional:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    value={formEdicion.Medico}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Medico: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Especialidad / Área:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    value={formEdicion.Area}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Area: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Subactividad / Rol:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    value={formEdicion.Rol}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Rol: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Módulo / Ubicación:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    value={formEdicion.Modulo}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Modulo: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Inicio (HH:MM):</label>
+                  <input
+                    type="time"
+                    required
+                    autoComplete="off"
+                    value={formEdicion.Hora_Inicio}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Hora_Inicio: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Fin (HH:MM):</label>
+                  <input
+                    type="time"
+                    required
+                    autoComplete="off"
+                    value={formEdicion.Hora_Fin}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Hora_Fin: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Fecha de Programación:</label>
+                  <input
+                    type="date"
+                    required
+                    autoComplete="off"
+                    value={formEdicion.Fecha}
+                    onChange={(e) => setFormEdicion({ ...formEdicion, Fecha: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setMedicoParaEditar(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg"
+                >
+                  Guardar Cambios
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CREAR NUEVO REGISTRO MANUAL (ADMIN) */}
+      {mostrarModalNuevoRegistro && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2">
+                <Plus className="w-5 h-5 text-emerald-500" />
+                Agregar Nuevo Registro Médico
+              </h3>
+              <button onClick={() => setMostrarModalNuevoRegistro(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={guardarNuevoRegistro} autoComplete="off" className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Servicio Destino:</label>
+                  <select
+                    value={formNuevo.TipoServicio}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, TipoServicio: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  >
+                    <option value="CONSULTA_EXTERNA">Consulta Externa</option>
+                    <option value="EMERGENCIA">Emergencia 24H</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Nombre del Médico:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    placeholder="Ej. Dr. Carlos Ramírez"
+                    value={formNuevo.Medico}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Medico: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Especialidad / Área:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    placeholder="Ej. Pediatría"
+                    value={formNuevo.Area}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Area: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Subactividad / Rol:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    placeholder="Ej. Consulta Médica / Emergencia"
+                    value={formNuevo.Rol}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Rol: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Módulo / Ubicación:</label>
+                  <input
+                    type="text"
+                    required
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck="false"
+                    placeholder="Ej. Módulo 01 / Shock Trauma"
+                    value={formNuevo.Modulo}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Modulo: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Inicio (HH:MM):</label>
+                  <input
+                    type="time"
+                    required
+                    autoComplete="off"
+                    value={formNuevo.Hora_Inicio}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Hora_Inicio: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Fin (HH:MM):</label>
+                  <input
+                    type="time"
+                    required
+                    autoComplete="off"
+                    value={formNuevo.Hora_Fin}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Hora_Fin: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Fecha de Programación:</label>
+                  <input
+                    type="date"
+                    required
+                    autoComplete="off"
+                    value={formNuevo.Fecha}
+                    onChange={(e) => setFormNuevo({ ...formNuevo, Fecha: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalNuevoRegistro(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition shadow-lg"
+                >
+                  Agregar Registro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* MODAL SELECCIÓN DE MÓDULOS */}
       {mostrarModalModulos && (
@@ -1097,11 +1658,12 @@ export default function App() {
               </button>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
               <div>
                 <label className="block text-xs font-bold mb-1.5 text-slate-400">Ingrese PIN de Acceso:</label>
                 <input
                   type="password"
+                  autoComplete="off"
                   value={pinInput}
                   onChange={(e) => { setPinInput(e.target.value); setErrorPin(false); }}
                   placeholder="****"
@@ -1152,7 +1714,7 @@ export default function App() {
               </button>
             </div>
 
-            <form onSubmit={guardarComunicado} className="space-y-4">
+            <form onSubmit={guardarComunicado} autoComplete="off" className="space-y-4">
               <div>
                 <label className="block text-xs font-bold mb-1.5 text-slate-400">Mensaje a mostrar en la marquesina:</label>
                 <textarea
@@ -1202,7 +1764,7 @@ export default function App() {
               </button>
             </div>
 
-            <form onSubmit={aplicarReemplazo} className="space-y-4">
+            <form onSubmit={aplicarReemplazo} autoComplete="off" className="space-y-4">
               <div>
                 <p className="text-xs text-slate-400 mb-2">
                   Médico Titular: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaReemplazo.Medico}</strong>
@@ -1210,6 +1772,9 @@ export default function App() {
                 <label className="block text-xs font-bold mb-1.5 text-slate-400">Nombre del Médico Reemplazante:</label>
                 <input
                   type="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  spellCheck="false"
                   value={nombreReemplazo}
                   onChange={(e) => setNombreReemplazo(e.target.value)}
                   placeholder="Ej. Dr. Juan Pérez"
