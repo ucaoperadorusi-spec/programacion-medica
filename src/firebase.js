@@ -3,7 +3,7 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDbCyujeasyH1u-zsYdfAAt2HgOSJKgTM",
+  apiKey: "AIzaSyCZr03yDPTPhWQrwHfV9m9FUNNTlQCmJrE",
   authDomain: "pro-emergencia.firebaseapp.com",
   projectId: "pro-emergencia",
   storageBucket: "pro-emergencia.firebasestorage.app",
