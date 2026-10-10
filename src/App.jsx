@@ -460,7 +460,7 @@ export default function App() {
       const user = userCredential.user;
 
       // Asignar rol según el correo registrado en Firebase
-      if (user.email === "uca.operadorusi@essalud.gob.pe") {
+      if (user.email === "andymsr2000@gmail.com") {
         setRolUsuario('ADMIN');
       } else {
         setRolUsuario('OPERADOR');
