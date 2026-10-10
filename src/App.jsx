@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren } from 'lucide-react';
@@ -126,21 +126,35 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // Firebase: Escuchar estado de Autenticación
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const correosAdmin = ['uca.operadorusi@essalud.gob.pe', 'andymsr2000@gmail.com'];
+        if (correosAdmin.includes(user.email.toLowerCase())) {
+          setRolUsuario('ADMIN');
+        } else {
+          setRolUsuario('OPERADOR');
+        }
+      } else {
+        setRolUsuario(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Firebase: Escuchar programación en tiempo real
   useEffect(() => {
-    const hoy = obtenerFechaHoyLocal();
-
-    const q = query(
-      collection(db, "programacion_medica"),
-      where("Fecha", "==", hoy)
-    );
+    // FIX: Se removió el "where(Fecha)" estricto para visualizar todo y debuggear
+    const q = collection(db, "programacion_medica");
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      console.log("Registros descargados de Firebase:", datos); // Revisa F12 Console
       setProgramacion(datos);
     });
     return () => unsubscribe();
-  }, [horaActual.toDateString()]);
+  }, []); // Dependencia vacía para que no parpadee al cambiar la hora
 
   // Lista única de Módulos disponibles
   const todosLosModulosDisponibles = Array.from(
@@ -459,9 +473,8 @@ export default function App() {
       const userCredential = await signInWithEmailAndPassword(auth, emailInput, passwordInput);
       const user = userCredential.user;
 
-      // Asignar rol según el correo registrado en Firebase
       const correosAdmin = ['uca.operadorusi@essalud.gob.pe', 'andymsr2000@gmail.com'];
-      if (correosAdmin.includes(user.email)) {
+      if (correosAdmin.includes(user.email.toLowerCase())) {
         setRolUsuario('ADMIN');
       } else {
         setRolUsuario('OPERADOR');
@@ -546,7 +559,9 @@ export default function App() {
         jsonData.forEach((item) => {
           const medico = getFieldValue(item, ['profesional', 'medico', 'nombre', 'doctor', 'personal']) || "Sin Nombre";
           const area = getFieldValue(item, ['servicio', 'area', 'especialidad', 'departamento']) || "General";
-          const rol = getFieldValue(item, ['subactividad', 'rol', 'cargo']) || "Consulta Médica";
+          
+          // FIX: Búsqueda amplia para asegurar que guarde el Rol (Subactividad)
+          const rol = getFieldValue(item, ['subactividad', 'rol', 'cargo', 'funcion', 'puesto', 'actividad']) || "Consulta Médica";
           
           let modulo = getFieldValue(item, ['modulo', 'ubicacion', 'piso', 'pabellon', 'bloque', 'consultorio']);
           modulo = (!modulo || String(modulo).trim() === "") ? "Módulo General" : String(modulo).trim();
@@ -664,6 +679,7 @@ export default function App() {
         if (!mapaMedicos.has(key)) {
           mapaMedicos.set(key, {
             ...item,
+            Rol: item.Rol || "Consulta Médica", // FIX: Aseguramos que el Rol se retenga al agrupar
             ids: [item.id],
             horarios: [{ inicio: item.Hora_Inicio || "--:--", fin: item.Hora_Fin || "--:--" }]
           });
@@ -985,7 +1001,7 @@ export default function App() {
                 ? "No hay ningún módulo seleccionado. Haz clic en 'Módulos' arriba para activarlos."
                 : soloTurnoActual 
                   ? `No hay personal médico atendiendo en este momento en ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'}.` 
-                  : `No hay programación cargada para el área de ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'} en la fecha de hoy.`}
+                  : `No hay programación cargada o filtrada para el área de ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'}.`}
             </p>
           </div>
         ) : (
