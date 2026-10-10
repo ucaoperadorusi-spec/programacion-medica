@@ -1,12 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from './firebase';
+import { db, auth } from './firebase';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc, query, where } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren } from 'lucide-react';
-
-// CONFIGURACIÓN DE PINS POR ROL
-const ADMIN_PIN = "1234";      // Acceso Total
-const OPERADOR_PIN = "5678";   // Solo Modificación de Estados
 
 export default function App() {
   const [programacion, setProgramacion] = useState([]);
@@ -70,7 +67,8 @@ export default function App() {
   const [rolUsuario, setRolUsuario] = useState(null);
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
-  const [pinInput, setPinInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
   const [errorPin, setErrorPin] = useState(false);
 
   // Modal para Reemplazo de Emergencia
@@ -90,7 +88,7 @@ export default function App() {
     TipoServicio: 'CONSULTA_EXTERNA'
   });
 
-  // Modal para Agregar Nuevo Registro Manual (ADMIN) - Sin autorrelleno de horas ni textos
+  // Modal para Agregar Nuevo Registro Manual (ADMIN)
   const [mostrarModalNuevoRegistro, setMostrarModalNuevoRegistro] = useState(false);
   const [formNuevo, setFormNuevo] = useState({
     Medico: '',
@@ -128,7 +126,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Firebase: Escuchar programación en tiempo real (FECHA DE HOY LOCAL)
+  // Firebase: Escuchar programación en tiempo real
   useEffect(() => {
     const hoy = obtenerFechaHoyLocal();
 
@@ -452,25 +450,39 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
-  // CONTROL DE AUTENTICACIÓN SEGÚN PIN
-  const handleLogin = (e) => {
+  // CONTROL DE AUTENTICACIÓN SEGÚN FIREBASE AUTH
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (pinInput === ADMIN_PIN) {
-      setRolUsuario('ADMIN');
+    setErrorPin(false);
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, emailInput, passwordInput);
+      const user = userCredential.user;
+
+      // Asignar rol según el correo registrado en Firebase
+      if (user.email === "uca.operadorusi@essalud.gob.pe") {
+        setRolUsuario('ADMIN');
+      } else {
+        setRolUsuario('OPERADOR');
+      }
+
       setMostrarModalLogin(false);
-      setPinInput('');
-      setErrorPin(false);
-    } else if (pinInput === OPERADOR_PIN) {
-      setRolUsuario('OPERADOR');
-      setMostrarModalLogin(false);
-      setPinInput('');
-      setErrorPin(false);
-    } else {
+      setEmailInput('');
+      setPasswordInput('');
+    } catch (error) {
+      console.error("Error al iniciar sesión:", error.code, error.message);
       setErrorPin(true);
     }
   };
 
-  const handleLogout = () => setRolUsuario(null);
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.error("Error al cerrar sesión:", err);
+    }
+    setRolUsuario(null);
+  };
 
   const guardarComunicado = async (e) => {
     e.preventDefault();
@@ -579,7 +591,6 @@ export default function App() {
             hFin = getFieldValue(item, ['hora_fin', 'fin', 'hasta']) || "--:--";
           }
 
-          // Detección explícita de servicio sin forzar autorrelleno si viene especificado
           const servicioExcel = getFieldValue(item, ['tiposervicio', 'tipo_servicio', 'servicio_tipo', 'servicio_activo']);
           let tipoServicioFinal = 'CONSULTA_EXTERNA';
 
@@ -693,7 +704,7 @@ export default function App() {
   const datosFiltrados = programacionAgrupada.filter(item => {
     const mod = item.Modulo || "Módulo General";
     
-    // 1. Filtrar por tipo de Servicio (Consulta Externa vs Emergencia)
+    // 1. Filtrar por tipo de Servicio
     const esEmerg = item.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(item.Area, item.Rol);
     if (servicioActivo === 'EMERGENCIA' && !esEmerg) return false;
     if (servicioActivo === 'CONSULTA_EXTERNA' && esEmerg) return false;
@@ -752,7 +763,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* PESTAÑAS PRINCIPALES: CONSULTA EXTERNA / EMERGENCIA */}
+        {/* PESTAÑAS PRINCIPALES */}
         <div className={`flex p-1 rounded-2xl border transition ${
           temaClaro ? 'bg-slate-100 border-slate-300' : 'bg-slate-800/80 border-slate-700'
         }`}>
@@ -1642,7 +1653,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN MULTI-ROL */}
+      {/* MODAL LOGIN CON FIREBASE AUTH */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
@@ -1660,23 +1671,43 @@ export default function App() {
 
             <form onSubmit={handleLogin} autoComplete="off" className="space-y-4">
               <div>
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Ingrese PIN de Acceso:</label>
+                <label className="block text-xs font-bold mb-1 text-slate-400">Correo Electrónico:</label>
                 <input
-                  type="password"
+                  type="email"
+                  required
                   autoComplete="off"
-                  value={pinInput}
-                  onChange={(e) => { setPinInput(e.target.value); setErrorPin(false); }}
-                  placeholder="****"
-                  maxLength={6}
-                  className={`w-full px-4 py-2.5 rounded-xl border text-center font-mono text-lg tracking-widest focus:outline-none transition ${
+                  value={emailInput}
+                  onChange={(e) => { setEmailInput(e.target.value); setErrorPin(false); }}
+                  placeholder="usuario@hospital.gob.pe"
+                  className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
                     errorPin
                       ? 'border-red-500 bg-red-500/10 text-red-400'
                       : temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
                   }`}
                   autoFocus
                 />
-                {errorPin && <p className="text-red-400 text-xs mt-1 text-center font-semibold">PIN no válido. Intente nuevamente.</p>}
               </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1 text-slate-400">Contraseña:</label>
+                <input
+                  type="password"
+                  required
+                  autoComplete="off"
+                  value={passwordInput}
+                  onChange={(e) => { setPasswordInput(e.target.value); setErrorPin(false); }}
+                  placeholder="••••••••"
+                  className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                    errorPin
+                      ? 'border-red-500 bg-red-500/10 text-red-400'
+                      : temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                />
+              </div>
+
+              {errorPin && (
+                <p className="text-red-400 text-xs text-center font-semibold">Credenciales no válidas o no registradas.</p>
+              )}
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
