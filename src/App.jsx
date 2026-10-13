@@ -120,6 +120,9 @@ export default function App() {
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
 
+  // Referencia para evitar repetir el audio infinitamente en la TV
+  const ultimoLlamadoRef = useRef(null);
+
   const obtenerFechaHoyLocal = () => {
     const d = new Date();
     const offset = d.getTimezoneOffset() * 60000;
@@ -131,6 +134,36 @@ export default function App() {
     const palabrasClave = ['emergencia', 'triaje', 'shock', 'trauma', 'observacion', 'observación', 'guardia', 'urgencia', 'urgencias'];
     return palabrasClave.some(p => texto.includes(p));
   };
+
+  // Función para reproducir el nombre en voz alta (Text-to-Speech)
+  const hablarNombrePaciente = (nombre, medico) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // Cancelar audios en cola
+      const texto = `Atención paciente ${nombre}, acercarse con el doctor ${medico}`;
+      const utterance = new SpeechSynthesisUtterance(texto);
+      utterance.lang = 'es-ES';
+      utterance.rate = 0.9;  // Velocidad pausada
+      utterance.pitch = 1.0; // Tono natural
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Escuchar cuando entra un nuevo paciente en estado LLAMANDO y enunciarlo en la TV
+  useEffect(() => {
+    if (servicioActivo !== 'EMERGENCIA') return;
+
+    const medLlamando = programacion.find(
+      p => p.TipoServicio === 'EMERGENCIA' && p.estado === 'LLAMANDO' && p.pacienteLlamado
+    );
+
+    if (medLlamando) {
+      const claveLlamado = `${medLlamando.id}_${medLlamando.pacienteLlamado}`;
+      if (ultimoLlamadoRef.current !== claveLlamado) {
+        ultimoLlamadoRef.current = claveLlamado;
+        hablarNombrePaciente(medLlamando.pacienteLlamado, medLlamando.Medico);
+      }
+    }
+  }, [programacion, servicioActivo]);
 
   // Reloj
   useEffect(() => {
@@ -230,7 +263,6 @@ export default function App() {
   }, [modoTvActivo, modulosSeleccionados, indiceRotacionTv, cicloTv]);
 
   const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHora = false, medObj = null) => {
-    // Si presiona LLAMANDO en Emergencia, abre el modal para ingresar al paciente
     if (nuevoEstado === "LLAMANDO" && servicioActivo === 'EMERGENCIA' && medObj) {
       setMedicoParaLlamar(medObj);
       setNombrePaciente(medObj.pacienteLlamado || '');
@@ -267,6 +299,11 @@ export default function App() {
     e.preventDefault();
     if (!medicoParaLlamar || !nombrePaciente.trim()) return;
 
+    const nombreLimpio = nombrePaciente.trim().toUpperCase();
+
+    // 🔊 Reproducir locución inmediatamente en la computadora del operador
+    hablarNombrePaciente(nombreLimpio, medicoParaLlamar.Medico);
+
     try {
       const ids = Array.isArray(medicoParaLlamar.ids) ? medicoParaLlamar.ids : [medicoParaLlamar.id];
       const batch = writeBatch(db);
@@ -275,7 +312,7 @@ export default function App() {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, {
           estado: "LLAMANDO",
-          pacienteLlamado: nombrePaciente.trim().toUpperCase()
+          pacienteLlamado: nombreLimpio
         });
       });
 
@@ -590,7 +627,6 @@ export default function App() {
           return;
         }
 
-        // Consultar registros ya guardados en Firestore
         const querySnapshot = await getDocs(collection(db, "programacion_medica"));
         const clavesProcesadas = new Set();
 
@@ -745,7 +781,6 @@ export default function App() {
       const fechaHoy = obtenerFechaHoyLocal();
 
       programacion.forEach((item) => {
-        // Filtrar automáticamente para que solo se muestre la fecha actual
         if (item.Fecha && item.Fecha !== fechaHoy) {
           return;
         }
@@ -801,22 +836,15 @@ export default function App() {
     }
   }, [programacion]);
 
-  // Filtrado según el servicio activo (Consulta Externa vs Emergencia)
   const datosFiltrados = programacionAgrupada.filter(item => {
     const mod = item.Modulo || "Módulo General";
     
-    // 1. Filtrar por tipo de Servicio
     const esEmerg = item.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(item.Area, item.Rol);
     if (servicioActivo === 'EMERGENCIA' && !esEmerg) return false;
     if (servicioActivo === 'CONSULTA_EXTERNA' && esEmerg) return false;
 
-    // 2. Filtro Modo TV
     if (modoTvActivo && mod !== moduloActualTv) return false;
-    
-    // 3. Filtro Módulos Seleccionados
     if (!modoTvActivo && !modulosSeleccionados.includes(mod)) return false;
-
-    // 4. Filtro Turno Actual
     if (soloTurnoActual && !estaEnTurno(item.horarios)) return false;
 
     return true;
@@ -969,7 +997,6 @@ export default function App() {
                 {rolUsuario === 'ADMIN' ? 'Admin' : 'Operador'}
               </span>
 
-              {/* Botones exclusivos para Administrador */}
               {rolUsuario === 'ADMIN' && (
                 <>
                   <button
@@ -1188,7 +1215,6 @@ export default function App() {
                                   </span>
                                 )}
 
-                                {/* Lápiz y Basurero solo para Admin */}
                                 {rolUsuario === 'ADMIN' && (
                                   <>
                                     <button
