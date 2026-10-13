@@ -1890,6 +1890,7 @@ const handleFileUpload = async (e) => {
           </div>
         </div>
       )}
+      
       {/* Modal: Reporte de Registros Duplicados Omitidos */}
       {mostrarModalReporte && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
