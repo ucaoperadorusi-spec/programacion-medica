@@ -684,9 +684,15 @@ export default function App() {
 
   const programacionAgrupada = React.useMemo(() => {
     try {
-      const mapaMedicos = new Map();
+     const mapaMedicos = new Map();
+     const fechaHoy = obtenerFechaHoyLocal(); // 1. Obtenemos la fecha actual del sistema
 
       programacion.forEach((item) => {
+        // 2. NUEVO FILTRO: Si la fecha del registro no es igual a hoy, lo ignoramos
+        if (item.Fecha !== fechaHoy) {
+          return;
+        }
+
         const nombreMedico = (item.Medico || "Sin Nombre").toLowerCase().trim();
         const key = `${item.Modulo || "Módulo General"}_${item.Area || "General"}_${nombreMedico}`;
         const rolLimpio = item.Rol || "Consulta Médica";
