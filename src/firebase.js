@@ -3,13 +3,13 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCZr03yDPTPhWQrwHfV9m9FUNNTlQCmJrE",
-  authDomain: "pro-emergencia.firebaseapp.com",
-  projectId: "pro-emergencia",
-  storageBucket: "pro-emergencia.firebasestorage.app",
-  messagingSenderId: "13096864397",
-  appId: "1:13096864397:web:150da13060c128d98f30c4",
-  measurementId: "G-QJZ3TJWE03"
+  apiKey: "AIzaSyAQcN6GCzkiTeAxpN6_FiSbOXaVBQEQfSo",
+  authDomain: "programacion-medica-81784.firebaseapp.com",
+  projectId: "programacion-medica-81784",
+  storageBucket: "programacion-medica-81784.firebasestorage.app",
+  messagingSenderId: "95989179251",
+  appId: "1:95989179251:web:4b679e190392c3b26a9b06",
+  measurementId: "G-N002Z8THS7"
 };
 
 const app = initializeApp(firebaseConfig);
