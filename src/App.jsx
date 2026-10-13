@@ -17,8 +17,14 @@ export default function App() {
   const [horaActual, setHoraActual] = useState(new Date());
   const [cargando, setCargando] = useState(false);
   const [soloTurnoActual, setSoloTurnoActual] = useState(false);
+
+  // Estados para reporte de duplicados en Excel
   const [duplicadosOmitidos, setDuplicadosOmitidos] = useState([]);
   const [mostrarModalReporte, setMostrarModalReporte] = useState(false);
+
+  // Estados para Llamar Paciente en Emergencia
+  const [medicoParaLlamar, setMedicoParaLlamar] = useState(null);
+  const [nombrePaciente, setNombrePaciente] = useState('');
 
   // Selección de servicio activo (Consulta Externa vs Emergencia)
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
@@ -70,7 +76,7 @@ export default function App() {
     }
   };
 
-  // Autenticación y roles: null | 'ADMIN' | 'OPERADOR'
+  // Autenticación y roles
   const [rolUsuario, setRolUsuario] = useState(null);
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
@@ -120,24 +126,22 @@ export default function App() {
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
   };
 
-  // Helper: Detectar si un área o rol pertenece a Emergencia
   const esEspecialidadEmergencia = (area = '', rol = '') => {
     const texto = `${area} ${rol}`.toLowerCase();
     const palabrasClave = ['emergencia', 'triaje', 'shock', 'trauma', 'observacion', 'observación', 'guardia', 'urgencia', 'urgencias'];
     return palabrasClave.some(p => texto.includes(p));
   };
 
-  // Reloj de alta precisión
+  // Reloj
   useEffect(() => {
     const timer = setInterval(() => setHoraActual(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Firebase: Persistencia de Sesión y Asignación Estricta de Roles
+  // Firebase Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user && user.email) {
-        // Únicamente los correos en correosAdmin serán ADMIN. Los demás serán OPERADOR.
         const correosAdmin = ['uca.operadorusi@essalud.gob.pe'];
         if (correosAdmin.includes(user.email.toLowerCase().trim())) {
           setRolUsuario('ADMIN');
@@ -151,10 +155,9 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firebase: Escuchar programación en tiempo real
+  // Firebase Realtime
   useEffect(() => {
     const q = collection(db, "programacion_medica");
-
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProgramacion(datos);
@@ -162,19 +165,18 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Lista única de Módulos disponibles
+  // Módulos Disponibles
   const todosLosModulosDisponibles = Array.from(
     new Set(programacion.map(item => item.Modulo || "Módulo General"))
   ).sort();
 
-  // Seleccionar todos los módulos al cargar por primera vez
   useEffect(() => {
     if (todosLosModulosDisponibles.length > 0 && modulosSeleccionados.length === 0) {
       setModulosSeleccionados(todosLosModulosDisponibles);
     }
   }, [programacion]);
 
-  // Firebase: Escuchar comunicado en tiempo real
+  // Firebase Comunicado
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "configuracion"), (snapshot) => {
       snapshot.docs.forEach(d => {
@@ -186,7 +188,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Auto-scroll Inteligente Modo TV
+  // Modo TV
   useEffect(() => {
     let scrollInterval = null;
     let timeoutAccion = null;
@@ -227,7 +229,14 @@ export default function App() {
     };
   }, [modoTvActivo, modulosSeleccionados, indiceRotacionTv, cicloTv]);
 
-  const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHora = false) => {
+  const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHora = false, medObj = null) => {
+    // Si presiona LLAMANDO en Emergencia, abre el modal para ingresar al paciente
+    if (nuevoEstado === "LLAMANDO" && servicioActivo === 'EMERGENCIA' && medObj) {
+      setMedicoParaLlamar(medObj);
+      setNombrePaciente(medObj.pacienteLlamado || '');
+      return;
+    }
+
     if (estaActivo && nuevoEstado === "PROGRAMADO") {
       alert("No se puede asignar 'Próximo Turno' a un médico que se encuentra actualmente en turno activo de consultorio.");
       return;
@@ -243,11 +252,38 @@ export default function App() {
       const batch = writeBatch(db);
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
-        batch.update(medRef, { estado: nuevoEstado });
+        batch.update(medRef, { 
+          estado: nuevoEstado,
+          pacienteLlamado: nuevoEstado === "LLAMANDO" ? (medObj?.pacienteLlamado || '') : null
+        });
       });
       await batch.commit();
     } catch (err) {
       console.error("Error al actualizar estado:", err);
+    }
+  };
+
+  const confirmarLlamadaPaciente = async (e) => {
+    e.preventDefault();
+    if (!medicoParaLlamar || !nombrePaciente.trim()) return;
+
+    try {
+      const ids = Array.isArray(medicoParaLlamar.ids) ? medicoParaLlamar.ids : [medicoParaLlamar.id];
+      const batch = writeBatch(db);
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          estado: "LLAMANDO",
+          pacienteLlamado: nombrePaciente.trim().toUpperCase()
+        });
+      });
+
+      await batch.commit();
+      setMedicoParaLlamar(null);
+      setNombrePaciente('');
+    } catch (err) {
+      console.error("Error al registrar llamada de paciente:", err);
     }
   };
 
@@ -533,7 +569,7 @@ export default function App() {
     }
   };
 
-const handleFileUpload = async (e) => {
+  const handleFileUpload = async (e) => {
     if (rolUsuario !== 'ADMIN') return;
     const file = e.target.files[0];
     if (!file) return;
@@ -554,7 +590,7 @@ const handleFileUpload = async (e) => {
           return;
         }
 
-        // 1. OBTENER REGISTROS EXISTENTES EN FIRESTORE PARA DEPURAR DUPLICADOS
+        // Consultar registros ya guardados en Firestore
         const querySnapshot = await getDocs(collection(db, "programacion_medica"));
         const clavesProcesadas = new Set();
 
@@ -631,7 +667,6 @@ const handleFileUpload = async (e) => {
             const claveUnica = `${String(medico).trim().toLowerCase()}_${fechaFormateada}_${String(hInicio).trim()}_${String(hFin).trim()}_${String(rol).trim().toLowerCase()}`;
 
             if (clavesProcesadas.has(claveUnica)) {
-              // Ya existe en la BD o se repite en el mismo Excel
               listaDuplicados.push({
                 filaExcel: index + 2,
                 medico: String(medico).trim(),
@@ -1133,6 +1168,17 @@ const handleFileUpload = async (e) => {
                                 {med.esReemplazo && med.medicoTitular && (
                                   <p className="text-[11px] text-purple-500 italic font-medium">Reemplaza a: {med.medicoTitular}</p>
                                 )}
+
+                                {/* Aviso de Paciente Llamado solo en Servicio de Emergencia */}
+                                {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
+                                  <div className="mt-3 p-3 rounded-2xl bg-rose-500/20 border-2 border-rose-500 text-rose-300 animate-pulse flex items-center gap-2.5 shadow-lg shadow-rose-950/50">
+                                    <Bell className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
+                                    <div className="overflow-hidden">
+                                      <p className="text-[10px] uppercase font-bold tracking-wider text-rose-400">Atendiendo a / Llamando a:</p>
+                                      <p className="text-sm font-black text-white leading-tight truncate">{med.pacienteLlamado}</p>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               <div className="flex items-center gap-1">
@@ -1247,7 +1293,7 @@ const handleFileUpload = async (e) => {
                             </div>
                           </div>
 
-                          {/* Control de Estados y Reemplazos (Habilitado tanto para Operador como Admin) */}
+                          {/* Control de Estados y Reemplazos */}
                           <div className="pt-3 border-t border-slate-200/40 dark:border-slate-800/60 space-y-3">
                             <div className="flex items-center justify-between">
                               <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
@@ -1302,7 +1348,7 @@ const handleFileUpload = async (e) => {
                                     <button
                                       key={key}
                                       disabled={esBloqueado}
-                                      onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora)}
+                                      onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora, med)}
                                       title={tooltipBloqueo}
                                       className={`py-1 text-[10px] font-bold rounded-lg border transition ${
                                         esBloqueado
@@ -1921,7 +1967,7 @@ const handleFileUpload = async (e) => {
             </div>
 
             <p className="text-xs text-slate-400 mb-4">
-              Se detectaron <strong className="text-amber-500">{duplicadosOmitidos.length} registro(s) duplicado(s)</strong> en el archivo Excel. Estos registros no se volvieron a cargar a la base de datos:
+              Se detectaron <strong className="text-amber-500">{duplicadosOmitidos.length} registro(s) duplicado(s)</strong> en el archivo Excel o ya existentes en el sistema. Estos registros no se volvieron a cargar:
             </p>
 
             <div className="max-h-64 overflow-y-auto space-y-2 pr-1 mb-6">
@@ -1960,6 +2006,63 @@ const handleFileUpload = async (e) => {
           </div>
         </div>
       )} 
+
+      {/* Modal: Ingresar Nombre del Paciente a Llamar (Solo Emergencia) */}
+      {medicoParaLlamar && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-rose-500">
+                <Bell className="w-5 h-5 text-rose-500 animate-bounce" />
+                Llamar Paciente a Pantalla TV
+              </h3>
+              <button onClick={() => setMedicoParaLlamar(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={confirmarLlamadaPaciente} autoComplete="off" className="space-y-4">
+              <div>
+                <p className="text-xs text-slate-400 mb-2">
+                  Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaLlamar.Medico}</strong>
+                </p>
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Apellidos y Nombres del Paciente:</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={nombrePaciente}
+                  onChange={(e) => setNombrePaciente(e.target.value)}
+                  placeholder="EJ. PÉREZ GARCÍA JUAN"
+                  required
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-bold uppercase focus:outline-none transition ${
+                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMedicoParaLlamar(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-500 transition shadow-lg flex items-center gap-1.5"
+                >
+                  <Bell className="w-4 h-4" />
+                  Llamar Paciente
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
