@@ -17,6 +17,8 @@ export default function App() {
   const [horaActual, setHoraActual] = useState(new Date());
   const [cargando, setCargando] = useState(false);
   const [soloTurnoActual, setSoloTurnoActual] = useState(false);
+  const [duplicadosOmitidos, setDuplicadosOmitidos] = useState([]);
+  const [mostrarModalReporte, setMostrarModalReporte] = useState(false);
 
   // Selección de servicio activo (Consulta Externa vs Emergencia)
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
@@ -531,7 +533,7 @@ export default function App() {
     }
   };
 
-  const handleFileUpload = async (e) => {
+const handleFileUpload = async (e) => {
     if (rolUsuario !== 'ADMIN') return;
     const file = e.target.files[0];
     if (!file) return;
@@ -552,6 +554,7 @@ export default function App() {
           return;
         }
 
+        // Limpiar la base de datos previa
         const querySnapshot = await getDocs(collection(db, "programacion_medica"));
         const batchDelete = writeBatch(db);
         querySnapshot.docs.forEach(d => batchDelete.delete(d.ref));
@@ -561,28 +564,20 @@ export default function App() {
         const colRef = collection(db, "programacion_medica");
         const modulosDetectados = new Set();
 
-        jsonData.forEach((item) => {
-          const medico = getFieldValue(item, [
-            'profesional', 'medico', 'nombre', 'doctor', 'personal', 'medico_titular', 'cmp'
-          ]) || "Sin Nombre";
+        const clavesProcesadas = new Set();
+        const listaDuplicados = [];
+        let registrosProcesadosCount = 0;
 
-          const area = getFieldValue(item, [
-            'servicio', 'area', 'especialidad', 'departamento', 'unidad'
-          ]) || "General";
+        jsonData.forEach((item, index) => {
+          // Mapeo directo de las columnas de tu Excel
+          const medico = getFieldValue(item, ['profesional', 'medico', 'nombre']) || "Sin Nombre";
+          const area = getFieldValue(item, ['servicio', 'area', 'especialidad']) || "General";
+          const rol = getFieldValue(item, ['subactividad', 'rol', 'actividad']) || "Consulta Médica";
           
-          const rol = getFieldValue(item, [
-            'subactividad', 'rol', 'cargo', 'funcion', 'puesto', 'actividad', 
-            'actividad_medica', 'descripcion', 'tarea', 'atencion', 'tipo_actividad'
-          ]) || "Consulta Médica";
-          
-          let modulo = getFieldValue(item, [
-            'modulo', 'ubicacion', 'piso', 'pabellon', 'bloque', 'consultorio', 'sector'
-          ]);
+          let modulo = getFieldValue(item, ['modulo', 'ubicacion', 'consultorio']);
           modulo = (!modulo || String(modulo).trim() === "") ? "Módulo General" : String(modulo).trim();
 
-          modulosDetectados.add(modulo);
-
-          const fechaRaw = getFieldValue(item, ['fecha_programacion', 'fecha', 'date', 'f_prog']);
+          const fechaRaw = getFieldValue(item, ['fecha_programacion', 'fecha']);
           let fechaFormateada = obtenerFechaHoyLocal();
 
           if (fechaRaw) {
@@ -609,7 +604,7 @@ export default function App() {
             }
           }
 
-          const turnoRaw = getFieldValue(item, ['turno', 'horario', 'rangohora']) || "";
+          const turnoRaw = getFieldValue(item, ['turno', 'horario']) || "";
           let hInicio = "--:--", hFin = "--:--";
 
           if (turnoRaw && String(turnoRaw).includes('-')) {
@@ -617,35 +612,44 @@ export default function App() {
             hInicio = partes[0].trim();
             hFin = partes[1].trim();
           } else {
-            hInicio = getFieldValue(item, ['hora_inicio', 'inicio', 'desde', 'h_inicio']) || "--:--";
-            hFin = getFieldValue(item, ['hora_fin', 'fin', 'hasta', 'h_fin']) || "--:--";
+            hInicio = getFieldValue(item, ['hora_inicio', 'inicio']) || "--:--";
+            hFin = getFieldValue(item, ['hora_fin', 'fin']) || "--:--";
           }
 
-          const servicioExcel = getFieldValue(item, ['tiposervicio', 'tipo_servicio', 'servicio_tipo', 'servicio_activo']);
-          let tipoServicioFinal = 'CONSULTA_EXTERNA';
-
-          if (servicioExcel && String(servicioExcel).toUpperCase().includes('EMERG')) {
-            tipoServicioFinal = 'EMERGENCIA';
-          } else if (servicioExcel && (String(servicioExcel).toUpperCase().includes('CONSULTA') || String(servicioExcel).toUpperCase().includes('EXTERNA'))) {
-            tipoServicioFinal = 'CONSULTA_EXTERNA';
-          } else {
-            const esEmerg = esEspecialidadEmergencia(String(area), String(rol));
-            tipoServicioFinal = esEmerg ? 'EMERGENCIA' : 'CONSULTA_EXTERNA';
-          }
+          const esEmerg = esEspecialidadEmergencia(String(area), String(rol));
+          const tipoServicioFinal = esEmerg ? 'EMERGENCIA' : 'CONSULTA_EXTERNA';
 
           if (medico !== "Sin Nombre" || area !== "General") {
-            const newDocRef = doc(colRef);
-            batchInsert.set(newDocRef, {
-              Modulo: modulo,
-              Area: String(area).trim(),
-              Medico: String(medico).trim(),
-              Rol: String(rol).trim(),
-              Fecha: fechaFormateada,
-              Hora_Inicio: String(hInicio).trim(),
-              Hora_Fin: String(hFin).trim(),
-              TipoServicio: tipoServicioFinal,
-              estado: "CONSULTA"
-            });
+            // Clave de control para evitar duplicados exactos
+            const claveUnica = `${String(medico).trim().toLowerCase()}_${fechaFormateada}_${String(hInicio).trim()}_${String(hFin).trim()}_${String(rol).trim().toLowerCase()}`;
+
+            if (clavesProcesadas.has(claveUnica)) {
+              listaDuplicados.push({
+                filaExcel: index + 2, // Fila real en el Excel
+                medico: String(medico).trim(),
+                area: String(area).trim(),
+                rol: String(rol).trim(),
+                fecha: fechaFormateada,
+                horario: `${hInicio} - ${hFin}`
+              });
+            } else {
+              clavesProcesadas.add(claveUnica);
+              modulosDetectados.add(modulo);
+              registrosProcesadosCount++;
+
+              const newDocRef = doc(colRef);
+              batchInsert.set(newDocRef, {
+                Modulo: modulo,
+                Area: String(area).trim(),
+                Medico: String(medico).trim(),
+                Rol: String(rol).trim(),
+                Fecha: fechaFormateada,
+                Hora_Inicio: String(hInicio).trim(),
+                Hora_Fin: String(hFin).trim(),
+                TipoServicio: tipoServicioFinal,
+                estado: "CONSULTA"
+              });
+            }
           }
         });
 
@@ -653,11 +657,16 @@ export default function App() {
         const listaNuevosModulos = Array.from(modulosDetectados).sort();
         setModulosSeleccionados(listaNuevosModulos);
 
-        alert(`¡Carga exitosa! Se procesaron ${jsonData.length} registros distribuidos en ${listaNuevosModulos.length} módulo(s).`);
+        if (listaDuplicados.length > 0) {
+          setDuplicadosOmitidos(listaDuplicados);
+          setMostrarModalReporte(true);
+        } else {
+          alert(`¡Carga exitosa! Se guardaron ${registrosProcesadosCount} registros correctamente.`);
+        }
 
       } catch (err) {
         console.error("Error en la subida:", err);
-        alert("Ocurrió un error al procesar el Excel.");
+        alert("Ocurrió un error al procesar el archivo Excel.");
       } finally {
         setCargando(false);
         e.target.value = null;
@@ -684,12 +693,12 @@ export default function App() {
 
   const programacionAgrupada = React.useMemo(() => {
     try {
-     const mapaMedicos = new Map();
-     const fechaHoy = obtenerFechaHoyLocal(); // 1. Obtenemos la fecha actual del sistema
+      const mapaMedicos = new Map();
+      const fechaHoy = obtenerFechaHoyLocal();
 
       programacion.forEach((item) => {
-        // 2. NUEVO FILTRO: Si la fecha del registro no es igual a hoy, lo ignoramos
-        if (item.Fecha !== fechaHoy) {
+        // Filtrar automáticamente para que solo se muestre la fecha actual
+        if (item.Fecha && item.Fecha !== fechaHoy) {
           return;
         }
 
@@ -1881,6 +1890,62 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Modal: Reporte de Registros Duplicados Omitidos */}
+      {mostrarModalReporte && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-2xl rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <div className="flex items-center space-x-2">
+                <Bell className="w-5 h-5 text-amber-500 animate-bounce" />
+                <h3 className="text-lg font-bold">Reporte de Carga: Duplicados Omitidos</h3>
+              </div>
+              <button onClick={() => setMostrarModalReporte(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-4">
+              Se detectaron <strong className="text-amber-500">{duplicadosOmitidos.length} registro(s) duplicado(s)</strong> en el archivo Excel. Estos registros no se volvieron a cargar a la base de datos:
+            </p>
+
+            <div className="max-h-64 overflow-y-auto space-y-2 pr-1 mb-6">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className={`border-b ${temaClaro ? 'border-slate-200 text-slate-600' : 'border-slate-800 text-slate-400'}`}>
+                    <th className="py-2 px-3">Fila Excel</th>
+                    <th className="py-2 px-3">Médico</th>
+                    <th className="py-2 px-3">Especialidad / Rol</th>
+                    <th className="py-2 px-3">Horario</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {duplicadosOmitidos.map((dup, i) => (
+                    <tr key={i} className={`border-b ${
+                      temaClaro ? 'border-slate-100 hover:bg-slate-50' : 'border-slate-800/50 hover:bg-slate-800/40'
+                    }`}>
+                      <td className="py-2 px-3 font-mono font-bold text-amber-500">#{dup.filaExcel}</td>
+                      <td className="py-2 px-3 font-bold">{dup.medico}</td>
+                      <td className="py-2 px-3">{dup.area} - {dup.rol}</td>
+                      <td className="py-2 px-3 font-mono">{dup.horario}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setMostrarModalReporte(false)}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )} 
     </div>
   );
 }
