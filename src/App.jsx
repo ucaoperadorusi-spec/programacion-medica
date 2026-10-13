@@ -136,7 +136,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user && user.email) {
         // Únicamente los correos en correosAdmin serán ADMIN. Los demás serán OPERADOR.
-        const correosAdmin = ['andymsr2000@gmail.com'];
+        const correosAdmin = ['uca.operadorusi@essalud.gob.pe'];
         if (correosAdmin.includes(user.email.toLowerCase().trim())) {
           setRolUsuario('ADMIN');
         } else {
@@ -478,7 +478,7 @@ export default function App() {
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
       const user = userCredential.user;
 
-      const correosAdmin = ['andymsr2000@gmail.com'];
+      const correosAdmin = ['uca.operadorusi@essalud.gob.pe'];
       if (correosAdmin.includes(user.email.toLowerCase())) {
         setRolUsuario('ADMIN');
       } else {
