@@ -554,22 +554,30 @@ const handleFileUpload = async (e) => {
           return;
         }
 
-        // Limpiar la base de datos previa
+        // 1. OBTENER REGISTROS EXISTENTES EN FIRESTORE PARA DEPURAR DUPLICADOS
         const querySnapshot = await getDocs(collection(db, "programacion_medica"));
-        const batchDelete = writeBatch(db);
-        querySnapshot.docs.forEach(d => batchDelete.delete(d.ref));
-        await batchDelete.commit();
+        const clavesProcesadas = new Set();
+
+        querySnapshot.docs.forEach(docSnap => {
+          const d = docSnap.data();
+          const med = String(d.Medico || "").trim().toLowerCase();
+          const fec = String(d.Fecha || "").trim();
+          const ini = String(d.Hora_Inicio || "").trim();
+          const fin = String(d.Hora_Fin || "").trim();
+          const rol = String(d.Rol || "").trim().toLowerCase();
+
+          if (med) {
+            clavesProcesadas.add(`${med}_${fec}_${ini}_${fin}_${rol}`);
+          }
+        });
 
         const batchInsert = writeBatch(db);
         const colRef = collection(db, "programacion_medica");
         const modulosDetectados = new Set();
-
-        const clavesProcesadas = new Set();
         const listaDuplicados = [];
         let registrosProcesadosCount = 0;
 
         jsonData.forEach((item, index) => {
-          // Mapeo directo de las columnas de tu Excel
           const medico = getFieldValue(item, ['profesional', 'medico', 'nombre']) || "Sin Nombre";
           const area = getFieldValue(item, ['servicio', 'area', 'especialidad']) || "General";
           const rol = getFieldValue(item, ['subactividad', 'rol', 'actividad']) || "Consulta Médica";
@@ -620,12 +628,12 @@ const handleFileUpload = async (e) => {
           const tipoServicioFinal = esEmerg ? 'EMERGENCIA' : 'CONSULTA_EXTERNA';
 
           if (medico !== "Sin Nombre" || area !== "General") {
-            // Clave de control para evitar duplicados exactos
             const claveUnica = `${String(medico).trim().toLowerCase()}_${fechaFormateada}_${String(hInicio).trim()}_${String(hFin).trim()}_${String(rol).trim().toLowerCase()}`;
 
             if (clavesProcesadas.has(claveUnica)) {
+              // Ya existe en la BD o se repite en el mismo Excel
               listaDuplicados.push({
-                filaExcel: index + 2, // Fila real en el Excel
+                filaExcel: index + 2,
                 medico: String(medico).trim(),
                 area: String(area).trim(),
                 rol: String(rol).trim(),
@@ -653,15 +661,20 @@ const handleFileUpload = async (e) => {
           }
         });
 
-        await batchInsert.commit();
+        if (registrosProcesadosCount > 0) {
+          await batchInsert.commit();
+        }
+
         const listaNuevosModulos = Array.from(modulosDetectados).sort();
-        setModulosSeleccionados(listaNuevosModulos);
+        if (listaNuevosModulos.length > 0) {
+          setModulosSeleccionados(listaNuevosModulos);
+        }
 
         if (listaDuplicados.length > 0) {
           setDuplicadosOmitidos(listaDuplicados);
           setMostrarModalReporte(true);
         } else {
-          alert(`¡Carga exitosa! Se guardaron ${registrosProcesadosCount} registros correctamente.`);
+          alert(`¡Carga exitosa! Se guardaron ${registrosProcesadosCount} registros nuevos correctamente.`);
         }
 
       } catch (err) {
