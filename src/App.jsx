@@ -14,7 +14,7 @@ import {
   CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
-  Timer, History, UserMinus, AlertCircle, Check
+  Timer, History, UserMinus, AlertCircle, Check, LogIn
 } from 'lucide-react';
 
 export default function App() {
@@ -33,7 +33,7 @@ export default function App() {
   const [medicoParaLlamar, setMedicoParaLlamar] = useState(null);
   const [nombrePaciente, setNombrePaciente] = useState('');
 
-  // Estado para Editar Nombre del Paciente en Llamada Activa (Punto 2)
+  // Estado para Editar Nombre del Paciente en Llamada o Consulta Activa
   const [medicoParaEditarPaciente, setMedicoParaEditarPaciente] = useState(null);
   const [nuevoNombreEditado, setNuevoNombreEditado] = useState('');
 
@@ -127,7 +127,7 @@ export default function App() {
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
 
-  // Sistema de Cola de Llamados
+  // Cola de voz
   const colaLlamadosRef = useRef([]);
   const reproduciendoAudioRef = useRef(false);
   const llamadosProcesadosRef = useRef(new Set());
@@ -195,14 +195,15 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio) => {
+  // FUNCIONES DE AUDITORÍA CON REGISTRO INDEPENDIENTE DE TIMESTAMPS
+  const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio, horaIngresoIso = null) => {
     try {
       await addDoc(collection(db, "historial_llamados"), {
         medico: medico || "Desconocido",
         paciente: paciente || "Desconocido",
-        estado: estadoLlamado,
+        estado: estadoLlamado, // 'LLAMADO', 'EN_CONSULTA', 'ATENDIDO', 'NO_RESPONDIO'
         servicio: servicio || 'EMERGENCIA',
-        fechaIso: new Date().toISOString(),
+        fechaIso: horaIngresoIso || new Date().toISOString(),
         fechaFormateada: obtenerFechaHoyLocal(),
         horaFormateada: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
       });
@@ -226,57 +227,94 @@ export default function App() {
     }
   };
 
-  const marcarPacienteNoRespondio = async (medObj) => {
+  // PASO 1: PASAR DE LLAMANDO A "EN CONSULTA" (PRESERVA NOMBRE Y GUARDA HORA DE INGRESO INDEPENDIENTE)
+  const ingresarAConsultaConPaciente = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
     try {
       const pacienteNombre = medObj.pacienteLlamado;
-      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'NO_RESPONDIO', servicioActivo);
-      await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'NO_RESPONDIO');
+      const ahoraIso = new Date().toISOString();
+
+      // Guardar en la auditoría el momento exacto de ingreso a consulta
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'EN_CONSULTA', servicioActivo, ahoraIso);
 
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
-      const ahoraIso = new Date().toISOString();
 
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, {
           estado: "CONSULTA",
-          pacienteLlamado: null,
+          pacienteLlamado: pacienteNombre, // SE CONSERVA EL NOMBRE DEL PACIENTE
+          horaIngresoConsulta: ahoraIso,  // MARCA DE TIEMPO INDEPENDIENTE DE INGRESO
           estadoUltimoCambio: ahoraIso
         });
       });
 
       await batch.commit();
     } catch (err) {
-      console.error("Error al registrar inasistencia:", err);
+      console.error("Error al registrar ingreso a consulta:", err);
     }
   };
 
+  // PASO 2: FINALIZAR ATENCIÓN ("ATENDIDO") -> REGISTRA HORA FIN Y LIBERA CONSULTORIO
   const marcarPacienteAtendido = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
     try {
       const pacienteNombre = medObj.pacienteLlamado;
-      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'ATENDIDO', servicioActivo);
+      const ahoraIso = new Date().toISOString();
+
+      // Guardar evento final de atención cumplida
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'ATENDIDO', servicioActivo, ahoraIso);
       await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'ATENDIDO');
 
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
-      const ahoraIso = new Date().toISOString();
 
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, {
           estado: "CONSULTA",
-          pacienteLlamado: null,
+          pacienteLlamado: null,       // Se limpia la tarjeta para el próximo paciente
+          horaIngresoConsulta: null,
           estadoUltimoCambio: ahoraIso
         });
       });
 
       await batch.commit();
     } catch (err) {
-      console.error("Error al registrar atendido:", err);
+      console.error("Error al marcar como atendido:", err);
+    }
+  };
+
+  // MARCAR "NO RESPONDIO"
+  const marcarPacienteNoRespondio = async (medObj) => {
+    if (!medObj || !medObj.pacienteLlamado) return;
+
+    try {
+      const pacienteNombre = medObj.pacienteLlamado;
+      const ahoraIso = new Date().toISOString();
+
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'NO_RESPONDIO', servicioActivo, ahoraIso);
+      await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'NO_RESPONDIO');
+
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          estado: "CONSULTA",
+          pacienteLlamado: null,
+          horaIngresoConsulta: null,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+
+      await batch.commit();
+    } catch (err) {
+      console.error("Error al registrar no respondió:", err);
     }
   };
 
@@ -299,13 +337,12 @@ export default function App() {
       });
 
       await batch.commit();
-      await registrarEnHistorialFirestore(medObj.Medico, pacienteAVisar, 'RE_LLAMADO', servicioActivo);
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteAVisar, 'RE_LLAMADO', servicioActivo, ahoraIso);
     } catch (err) {
       console.error("Error al re-llamar paciente:", err);
     }
   };
 
-  // PUNTO 2: FUNCIÓN PARA ACTUALIZAR NOMBRE EDITADO DIRECTAMENTE EN FIREBASE (Sin duplicar)
   const guardarEdicionNombrePaciente = async (e) => {
     e.preventDefault();
     if (!medicoParaEditarPaciente || !nuevoNombreEditado.trim()) return;
@@ -314,7 +351,6 @@ export default function App() {
     const nombreAnterior = medicoParaEditarPaciente.pacienteLlamado;
 
     try {
-      // 1. Actualizar el documento de la programación médica sin crear uno nuevo
       const ids = Array.isArray(medicoParaEditarPaciente.ids) ? medicoParaEditarPaciente.ids : [medicoParaEditarPaciente.id];
       const batch = writeBatch(db);
 
@@ -327,7 +363,6 @@ export default function App() {
 
       await batch.commit();
 
-      // 2. Opcional: Actualizar las entradas recientes asociadas al llamado en el historial de llamadas
       const snapshotHistorial = await getDocs(collection(db, "historial_llamados"));
       snapshotHistorial.docs.forEach(async (d) => {
         const data = d.data();
@@ -342,11 +377,9 @@ export default function App() {
       setNuevoNombreEditado('');
     } catch (err) {
       console.error("Error al actualizar el nombre del paciente:", err);
-      alert("Error al actualizar el nombre del paciente.");
     }
   };
 
-  // Cargar Historial Global en Tiempo Real
   useEffect(() => {
     const q = collection(db, "historial_llamados");
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -357,7 +390,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Detección de llamados para reproducir voz
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
 
@@ -494,7 +526,7 @@ export default function App() {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, { 
           estado: nuevoEstado,
-          pacienteLlamado: nuevoEstado === "LLAMANDO" ? (medObj?.pacienteLlamado || '') : null,
+          pacienteLlamado: nuevoEstado === "LLAMANDO" ? (medObj?.pacienteLlamado || '') : medObj?.pacienteLlamado,
           estadoUltimoCambio: ahoraIso
         });
       });
@@ -525,7 +557,7 @@ export default function App() {
       });
 
       await batch.commit();
-      await registrarEnHistorialFirestore(medicoParaLlamar.Medico, nombreLimpio, 'LLAMADO', servicioActivo);
+      await registrarEnHistorialFirestore(medicoParaLlamar.Medico, nombreLimpio, 'LLAMADO', servicioActivo, ahoraIso);
 
       setMedicoParaLlamar(null);
       setNombrePaciente('');
@@ -584,14 +616,7 @@ export default function App() {
     setMedicoParaEditar(med);
     const tipoServ = med.TipoServicio || (esEspecialidadEmergencia(med.Area, med.Rol) ? 'EMERGENCIA' : 'CONSULTA_EXTERNA');
     setFormEdicion({
-      Medico: med.Medico || '',
-      Area: med.Area || '',
-      Rol: med.Rol || '',
-      Modulo: med.Modulo || '',
-      Hora_Inicio: med.horarios?.[0]?.inicio || med.Hora_Inicio || '',
-      Hora_Fin: med.horarios?.[0]?.fin || med.Hora_Fin || '',
-      Fecha: med.Fecha || obtenerFechaHoyLocal(),
-      TipoServicio: tipoServ
+      Medico: med.Medico || '', Area: med.Area || '', Rol: med.Rol || '', Modulo: med.Modulo || '', Hora_Inicio: med.horarios?.[0]?.inicio || med.Hora_Inicio || '', Hora_Fin: med.horarios?.[0]?.fin || med.Hora_Fin || '', Fecha: med.Fecha || obtenerFechaHoyLocal(), TipoServicio: tipoServ
     });
   };
 
@@ -1128,7 +1153,7 @@ export default function App() {
 
         <div className="flex flex-wrap items-center gap-3">
           
-          {/* PUNTO 1: SOLICITUD 1 -> SOLO MOSTRAR AUDITORÍA A ADMIN O OPERADOR */}
+          {/* BOTÓN AUDITORÍA VISIBLE SOLO PARA ROLES AUTORIZADOS */}
           {puedeModificarEstados && (
             <button
               onClick={() => setMostrarModalHistorial(true)}
@@ -1370,7 +1395,7 @@ export default function App() {
                       const estadoClave = calcularEstadoInteligente(med, estaActivoAhora);
                       const configEstado = ESTADOS_MEDICO[estadoClave] || ESTADOS_MEDICO.PROGRAMADO;
                       const IconoEstado = configEstado.icon;
-                      const tiempoTranscurrido = obtenerTiempoTranscurrido(med.estadoUltimoCambio);
+                      const tiempoTranscurrido = obtenerTiempoTranscurrido(med.horaIngresoConsulta || med.estadoUltimoCambio);
 
                       const inasistentesMed = historialLlamados.filter(
                         h => h.medico === med.Medico && h.estado === 'NO_RESPONDIO' && h.fechaFormateada === obtenerFechaHoyLocal()
@@ -1382,7 +1407,7 @@ export default function App() {
                           className={`p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 ${configEstado.cardColor}`}
                         >
                           <div>
-                            {/* Cabecera */}
+                            {/* Cabecera Médico */}
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
@@ -1394,9 +1419,9 @@ export default function App() {
                                   </p>
                                 )}
 
-                                {/* PUNTO 2: SOLICITUD 2 -> CUADRO DE LLAMANDO MÁS LARGO + BOTÓN DE EDITAR NOMBRE DE PACIENTE */}
+                                {/* PASO 1: BLOQUE ROJO "LLAMANDO A:" */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
-                                  <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full min-w-[320px] max-w-md ${
+                                  <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full min-w-[310px] max-w-md ${
                                     temaClaro 
                                       ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
                                       : 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-rose-950/50'
@@ -1414,7 +1439,7 @@ export default function App() {
                                         </div>
                                       </div>
 
-                                      {/* BOTÓN EDICIÓN NOMBRE DE PACIENTE */}
+                                      {/* Editar nombre */}
                                       {puedeModificarEstados && (
                                         <button
                                           type="button"
@@ -1423,20 +1448,32 @@ export default function App() {
                                             setNuevoNombreEditado(med.pacienteLlamado);
                                           }}
                                           className="p-2 bg-slate-800/80 hover:bg-slate-700 text-amber-400 border border-amber-500/40 rounded-xl transition shrink-0"
-                                          title="Corregir error de digitación en el nombre del paciente"
+                                          title="Corregir error de digitación"
                                         >
                                           <Pencil className="w-3.5 h-3.5" />
                                         </button>
                                       )}
                                     </div>
 
-                                    {/* Botonera del Llamado */}
+                                    {/* Botonera de Acción en Llamado */}
                                     {puedeModificarEstados && (
                                       <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-500/30">
+                                        {/* PASO 1 -> PASO 2: Ingresó a consulta */}
+                                        <button
+                                          type="button"
+                                          onClick={() => ingresarAConsultaConPaciente(med)}
+                                          className="flex-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          title="El paciente se presentó e ingresó físicamente al consultorio"
+                                        >
+                                          <LogIn className="w-3.5 h-3.5" />
+                                          <span>Ingresó a Consulta</span>
+                                        </button>
+
                                         <button
                                           type="button"
                                           onClick={() => volverALlamarPaciente(med)}
-                                          className="flex-1 px-2 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          className="px-2 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          title="Volver a hacer sonar el voceo en la TV"
                                         >
                                           <RefreshCw className="w-3.5 h-3.5" />
                                           <span>Re-llamar</span>
@@ -1444,17 +1481,9 @@ export default function App() {
 
                                         <button
                                           type="button"
-                                          onClick={() => marcarPacienteAtendido(med)}
-                                          className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                        >
-                                          <Check className="w-3.5 h-3.5" />
-                                          <span>Atendido</span>
-                                        </button>
-
-                                        <button
-                                          type="button"
                                           onClick={() => marcarPacienteNoRespondio(med)}
                                           className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          title="No acudió al llamado"
                                         >
                                           <UserMinus className="w-3.5 h-3.5" />
                                           <span>No Respondió</span>
@@ -1464,7 +1493,60 @@ export default function App() {
                                   </div>
                                 )}
 
-                                {/* PUNTO 3: SOLICITUD 3 -> NO RESPONDIERON HOY SOLO VISIBLE PARA OPERADOR Y ADMIN (OCULTO EN VISTA PÚBLICA/TV) */}
+                                {/* PASO 2: BLOQUE VERDE "EN CONSULTA CON PACIENTE" (MANTIENE VISIBLE LOS DATOS DEL PACIENTE) */}
+                                {servicioActivo === 'EMERGENCIA' && estadoClave === "CONSULTA" && med.pacienteLlamado && (
+                                  <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full min-w-[310px] max-w-md ${
+                                    temaClaro 
+                                      ? 'bg-emerald-100 border-emerald-500 text-emerald-950 shadow-emerald-500/10' 
+                                      : 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-emerald-950/50'
+                                  }`}>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                                        <UserCheck className="w-5 h-5 text-emerald-400 shrink-0" />
+                                        <div className="overflow-hidden w-full">
+                                          <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-emerald-800' : 'text-emerald-400'}`}>
+                                            Atendiendo en Consulta a:
+                                          </p>
+                                          <p className={`text-base font-black leading-tight tracking-wide break-words ${temaClaro ? 'text-emerald-950' : 'text-white'}`}>
+                                            {med.pacienteLlamado}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {/* Editar nombre durante la consulta */}
+                                      {puedeModificarEstados && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setMedicoParaEditarPaciente(med);
+                                            setNuevoNombreEditado(med.pacienteLlamado);
+                                          }}
+                                          className="p-2 bg-slate-800/80 hover:bg-slate-700 text-amber-400 border border-amber-500/40 rounded-xl transition shrink-0"
+                                          title="Corregir error de digitación"
+                                        >
+                                          <Pencil className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {/* PASO 2 -> PASO 3: FINALIZAR ATENCIÓN */}
+                                    {puedeModificarEstados && (
+                                      <div className="flex items-center gap-2 pt-1 border-t border-emerald-500/30">
+                                        <button
+                                          type="button"
+                                          onClick={() => marcarPacienteAtendido(med)}
+                                          className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black transition shadow-lg flex items-center justify-center gap-2"
+                                          title="Culminar consulta y liberar el consultorio"
+                                        >
+                                          <Check className="w-4 h-4" />
+                                          <span>Finalizar Consulta (Atendido)</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* LISTA NO RESPONDIERON HOY (SOLO AUTORIZADOS) */}
                                 {puedeModificarEstados && !modoTvActivo && inasistentesMed.length > 0 && (
                                   <div className="mt-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1.5">
                                     <p className="text-[10px] font-black uppercase text-amber-500 flex items-center gap-1">
@@ -1607,7 +1689,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Contenedor de Estado y Botonera */}
+                          {/* Estado del Médico y Botonera General */}
                           <div className={`mt-2 p-3 rounded-xl border space-y-3 ${
                             temaClaro 
                               ? 'bg-slate-50 border-slate-200/80 shadow-inner' 
@@ -1695,7 +1777,7 @@ export default function App() {
         )}
       </main>
 
-      {/* PUNTO 2: MODAL PARA EDITAR EL NOMBRE DEL PACIENTE SIN CREAR NINGÚN DOCUMENTO DUPLICADO */}
+      {/* MODAL PARA EDITAR EL NOMBRE DEL PACIENTE */}
       {medicoParaEditarPaciente && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -1751,7 +1833,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL DE AUDITORÍA */}
+      {/* MODAL AUDITORÍA CON REGISTRO DE CADA EVENTO */}
       {mostrarModalHistorial && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-3xl rounded-3xl p-6 shadow-2xl border ${
@@ -1760,7 +1842,7 @@ export default function App() {
             <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
               <div className="flex items-center space-x-2">
                 <History className="w-5 h-5 text-purple-500" />
-                <h3 className="text-lg font-bold">Auditoría y Registro de Llamados</h3>
+                <h3 className="text-lg font-bold">Auditoría y Tiempos de Llamados</h3>
               </div>
               <button onClick={() => setMostrarModalHistorial(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -1777,7 +1859,7 @@ export default function App() {
                       <th className="py-2 px-3">Fecha / Hora</th>
                       <th className="py-2 px-3">Paciente</th>
                       <th className="py-2 px-3">Médico</th>
-                      <th className="py-2 px-3">Resultado / Evento</th>
+                      <th className="py-2 px-3">Etapa del Proceso</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1791,19 +1873,24 @@ export default function App() {
                         <td className="py-2 px-3 font-bold text-cyan-400 uppercase">{h.paciente}</td>
                         <td className="py-2 px-3">{h.medico}</td>
                         <td className="py-2 px-3 font-bold">
-                          {h.estado === 'NO_RESPONDIO' && (
-                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                              NO RESPONDIO
+                          {h.estado === 'LLAMADO' && (
+                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                              1. VOCEO / LLAMADO
+                            </span>
+                          )}
+                          {h.estado === 'EN_CONSULTA' && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              2. INGRESÓ A CONSULTA
                             </span>
                           )}
                           {h.estado === 'ATENDIDO' && (
-                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              ATENDIDO
+                            <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                              3. ATENCIÓN FINALIZADA
                             </span>
                           )}
-                          {h.estado === 'LLAMADO' && (
-                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                              PRIMER LLAMADO
+                          {h.estado === 'NO_RESPONDIO' && (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              NO RESPONDIO
                             </span>
                           )}
                           {h.estado === 'RE_LLAMADO' && (
@@ -1831,7 +1918,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL EDICIÓN REGISTRO MÉDICO */}
+      {/* MODALES ADICIONALES (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1975,7 +2062,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL NUEVO REGISTRO */}
       {mostrarModalNuevoRegistro && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -2123,7 +2209,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL MÓDULOS */}
       {mostrarModalModulos && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -2186,7 +2271,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LOGIN */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
@@ -2260,7 +2344,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL COMUNICADO */}
       {mostrarModalComunicado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -2309,7 +2392,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL REEMPLAZO */}
       {medicoParaReemplazo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2363,7 +2445,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL REPORTE DE EXCEL */}
       {mostrarModalReporte && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-2xl rounded-3xl p-6 shadow-2xl border ${
