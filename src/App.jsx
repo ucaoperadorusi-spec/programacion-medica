@@ -1201,7 +1201,7 @@ export default function App() {
                                   <div className="mt-3 p-3 rounded-2xl bg-rose-500/20 border-2 border-rose-500 text-rose-300 animate-pulse flex items-center gap-2.5 shadow-lg shadow-rose-950/50">
                                     <Bell className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
                                     <div className="overflow-hidden">
-                                      <p className="text-[10px] uppercase font-bold tracking-wider text-rose-400">Llamando a: / Atendiendo a:</p>
+                                      <p className="text-[10px] uppercase font-bold tracking-wider text-rose-400">Llamando a / Atendiendo a:</p>
                                       <p className="text-sm font-black text-white leading-tight truncate">{med.pacienteLlamado}</p>
                                     </div>
                                   </div>
