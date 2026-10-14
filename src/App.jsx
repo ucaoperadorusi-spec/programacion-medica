@@ -2248,7 +2248,7 @@ export default function App() {
                     }`}
                   >
                     <option value="CONSULTA_EXTERNA">Consulta Externa</option>
-                    <option value="EMERGENCIA">Emergencia 24H</option>
+                    <option value="EMERGENCIA">Emergencia</option>
                   </select>
                 </div>
 
@@ -2391,7 +2391,7 @@ export default function App() {
                     }`}
                   >
                     <option value="CONSULTA_EXTERNA">Consulta Externa</option>
-                    <option value="EMERGENCIA">Emergencia 24H</option>
+                    <option value="EMERGENCIA">Emergencia</option>
                   </select>
                 </div>
 
