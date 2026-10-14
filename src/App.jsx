@@ -1236,17 +1236,21 @@ export default function App() {
       temaClaro ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-white'
     }`}>
 
-     {/* ESTILOS CSS CORREGIDOS PARA EL MARQUEE */}
+     {/* ESTILOS CSS CORREGIDOS (MARQUESINA CONTINUA SIN SALTOS) */}
       <style>{`
         @keyframes marqueeAnimation {
-          0% { transform: translateX(0%); }
-          100% { transform: translateX(-100%); }
+          0% {
+            transform: translateX(0);
+          }
+          100% {
+            transform: translateX(-100%);
+          }
         }
         .animacion-marquee {
           display: inline-block;
           white-space: nowrap;
-          padding-left: 40%; /* <--- REDUCIDO: Ahora reaparece de inmediato al terminar */
-          animation: marqueeAnimation 38s linear infinite; /* <--- AUMENTADO: 38s para un movimiento suave y legible */
+          padding-left: 100%; /* Empieza justo fuera del borde derecho */
+          animation: marqueeAnimation 30s linear infinite; /* 30s = velocidad fluida y legible */
           will-change: transform;
         }
         .animacion-marquee:hover {
