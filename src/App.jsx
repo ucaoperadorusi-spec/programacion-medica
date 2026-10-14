@@ -14,7 +14,7 @@ import {
   CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
-  Timer
+  Timer, History, UserMinus, AlertCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -32,6 +32,10 @@ export default function App() {
   // Estados para Llamar Paciente en Emergencia
   const [medicoParaLlamar, setMedicoParaLlamar] = useState(null);
   const [nombrePaciente, setNombrePaciente] = useState('');
+
+  // Historial General de Llamados (Firestore) y Modal de Auditoría
+  const [historialLlamados, setHistorialLlamados] = useState([]);
+  const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
 
   // Selección de servicio activo (Consulta Externa vs Emergencia)
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
@@ -222,7 +226,7 @@ export default function App() {
         setTimeout(() => {
           reproduciendoAudioRef.current = false;
           procesarSiguienteLlamado();
-        }, 1000); // 1 segundo de pausa entre llamadas
+        }, 1000);
       };
 
       utterance.onerror = () => {
@@ -239,9 +243,55 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  // Volver a llamar al paciente
-  const volverALlamarPaciente = async (medObj) => {
+  // Guardar Entrada en la Colección Historial de Firestore
+  const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio) => {
+    try {
+      await addDoc(collection(db, "historial_llamados"), {
+        medico: medico || "Desconocido",
+        paciente: paciente || "Desconocido",
+        estado: estadoLlamado, // 'LLAMADO', 'NO_RESPONDIO', 'ATENDIDO'
+        servicio: servicio || 'EMERGENCIA',
+        fechaIso: new Date().toISOString(),
+        fechaFormateada: obtenerFechaHoyLocal(),
+        horaFormateada: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      });
+    } catch (err) {
+      console.error("Error guardando en historial_llamados:", err);
+    }
+  };
+
+  // Marcar Paciente que No Respondió al Llamado
+  const marcarPacienteNoRespondio = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
+
+    try {
+      // 1. Guardar constancia en la colección de auditoría
+      await registrarEnHistorialFirestore(medObj.Medico, medObj.pacienteLlamado, 'NO_RESPONDIO', servicioActivo);
+
+      // 2. Limpiar la llamada en el estado del médico
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      const ahoraIso = new Date().toISOString();
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          estado: "CONSULTA",
+          pacienteLlamado: null,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+
+      await batch.commit();
+    } catch (err) {
+      console.error("Error al registrar inasistencia de paciente:", err);
+    }
+  };
+
+  // Volver a llamar al paciente (re-llamado directo)
+  const volverALlamarPaciente = async (medObj, nombreDirecto = null) => {
+    const pacienteAVisar = nombreDirecto || medObj?.pacienteLlamado;
+    if (!medObj || !pacienteAVisar) return;
 
     try {
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
@@ -251,17 +301,34 @@ export default function App() {
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, {
+          estado: "LLAMANDO",
+          pacienteLlamado: pacienteAVisar.trim().toUpperCase(),
           estadoUltimoCambio: ahoraIso
         });
       });
 
       await batch.commit();
+
+      // Registro en auditoría del re-llamado
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteAVisar, 'RE_LLAMADO', servicioActivo);
     } catch (err) {
       console.error("Error al volver a llamar al paciente:", err);
     }
   };
 
-  // Detección en tiempo real de llamadas para colocarlas en la cola
+  // Cargar Historial en Tiempo Real desde Firestore
+  useEffect(() => {
+    const q = collection(db, "historial_llamados");
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // Ordenar por hora más reciente
+      datos.sort((a, b) => new Date(b.fechaIso).getTime() - new Date(a.fechaIso).getTime());
+      setHistorialLlamados(datos);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Detección de llamados para reproducir en pantalla
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
 
@@ -429,6 +496,10 @@ export default function App() {
       });
 
       await batch.commit();
+
+      // Registro en auditoría del primer llamado
+      await registrarEnHistorialFirestore(medicoParaLlamar.Medico, nombreLimpio, 'LLAMADO', servicioActivo);
+
       setMedicoParaLlamar(null);
       setNombrePaciente('');
     } catch (err) {
@@ -657,7 +728,7 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
-  // Inicio de sesión con inMemoryPersistence
+  // Inicio de sesión
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
@@ -1047,6 +1118,19 @@ export default function App() {
 
         <div className="flex flex-wrap items-center gap-3">
           <button
+            onClick={() => setMostrarModalHistorial(true)}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+              temaClaro 
+                ? 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100' 
+                : 'bg-purple-900/30 text-purple-300 border-purple-700/50 hover:bg-purple-800/50'
+            }`}
+            title="Ver auditoría de llamadas e inasistencias"
+          >
+            <History className="w-4 h-4 text-purple-400" />
+            <span>Auditoría de Llamados</span>
+          </button>
+
+          <button
             onClick={() => setSoloTurnoActual(!soloTurnoActual)}
             className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-semibold border transition ${
               soloTurnoActual
@@ -1309,6 +1393,11 @@ export default function App() {
                       const IconoEstado = configEstado.icon;
                       const tiempoTranscurrido = obtenerTiempoTranscurrido(med.estadoUltimoCambio);
 
+                      // Inasistentes específicos del día para este médico
+                      const inasistentesMed = historialLlamados.filter(
+                        h => h.medico === med.Medico && h.estado === 'NO_RESPONDIO' && h.fechaFormateada === obtenerFechaHoyLocal()
+                      );
+
                       return (
                         <div 
                           key={mIdx} 
@@ -1327,9 +1416,9 @@ export default function App() {
                                   </p>
                                 )}
 
-                                {/* Aviso de Paciente Llamado con Botón Re-llamar */}
+                                {/* Aviso de Paciente Llamado con Botón Re-llamar y Marcar No Respondió */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
-                                  <div className={`mt-3 p-3 rounded-2xl border-2 flex items-center justify-between gap-2.5 shadow-lg ${
+                                  <div className={`mt-3 p-3 rounded-2xl border-2 flex flex-col gap-2.5 shadow-lg ${
                                     temaClaro 
                                       ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
                                       : 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-rose-950/50'
@@ -1338,7 +1427,7 @@ export default function App() {
                                       <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
                                       <div className="overflow-hidden">
                                         <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
-                                          Atendiendo a / Llamando a:
+                                          Llamando a:
                                         </p>
                                         <p className={`text-sm font-black leading-tight truncate ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
                                           {med.pacienteLlamado}
@@ -1346,18 +1435,59 @@ export default function App() {
                                       </div>
                                     </div>
 
-                                    {/* Botón Re-llamar exclusivo para personal autenticado */}
+                                    {/* Botones de acción del llamado */}
                                     {puedeModificarEstados && (
-                                      <button
-                                        type="button"
-                                        onClick={() => volverALlamarPaciente(med)}
-                                        className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1 shrink-0"
-                                        title="Volver a hacer sonar la llamada en la pantalla TV"
-                                      >
-                                        <RefreshCw className="w-3.5 h-3.5" />
-                                        <span>Re-llamar</span>
-                                      </button>
+                                      <div className="flex items-center gap-2 pt-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => volverALlamarPaciente(med)}
+                                          className="flex-1 px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          title="Volver a hacer sonar la llamada en la pantalla TV"
+                                        >
+                                          <RefreshCw className="w-3.5 h-3.5" />
+                                          <span>Re-llamar</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => marcarPacienteNoRespondio(med)}
+                                          className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          title="Registrar que el paciente no acudió al llamado"
+                                        >
+                                          <UserMinus className="w-3.5 h-3.5" />
+                                          <span>No Respondió</span>
+                                        </button>
+                                      </div>
                                     )}
+                                  </div>
+                                )}
+
+                                {/* Lista Rápida de Pacientes Inasistentes para este médico */}
+                                {inasistentesMed.length > 0 && (
+                                  <div className="mt-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1.5">
+                                    <p className="text-[10px] font-black uppercase text-amber-500 flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3" />
+                                      Inasistentes Registrados Hoy ({inasistentesMed.length}):
+                                    </p>
+                                    <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+                                      {inasistentesMed.map((ina, idxIna) => (
+                                        <div key={idxIna} className="flex items-center justify-between bg-slate-900/60 p-1.5 rounded-lg border border-slate-700/50 text-[11px]">
+                                          <div className="truncate mr-1">
+                                            <span className="font-bold text-white truncate block">{ina.paciente}</span>
+                                            <span className="text-[9px] text-slate-400 font-mono">{ina.horaFormateada}</span>
+                                          </div>
+                                          {puedeModificarEstados && (
+                                            <button
+                                              onClick={() => volverALlamarPaciente(med, ina.paciente)}
+                                              className="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold text-[10px] shrink-0"
+                                              title="Volver a llamar a este paciente"
+                                            >
+                                              Llamar
+                                            </button>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -1523,7 +1653,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Botonera de Selección de Estado con Sincronización de Color */}
+                            {/* Botonera de Selección de Estado */}
                             {puedeModificarEstados && (
                               <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 pt-1">
                                 {Object.keys(ESTADOS_MEDICO).map((key) => {
@@ -1574,7 +1704,86 @@ export default function App() {
         )}
       </main>
 
-      {/* Modales */}
+      {/* MODAL DE AUDITORÍA Y HISTORIAL GENERAL DE LLAMADOS */}
+      {mostrarModalHistorial && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-3xl rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <div className="flex items-center space-x-2">
+                <History className="w-5 h-5 text-purple-500" />
+                <h3 className="text-lg font-bold">Auditoría y Registro de Llamados</h3>
+              </div>
+              <button onClick={() => setMostrarModalHistorial(false)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-400 mb-4">
+              Constancia en tiempo real guardada en Firestore sobre llamados, inasistencias y re-llamados para reportes oficiales.
+            </p>
+
+            <div className="max-h-80 overflow-y-auto space-y-2 pr-1 mb-6">
+              {historialLlamados.length === 0 ? (
+                <p className="text-sm text-slate-400 italic text-center py-6">No hay registros de llamados en la base de datos.</p>
+              ) : (
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className={`border-b ${temaClaro ? 'border-slate-200 text-slate-600' : 'border-slate-800 text-slate-400'}`}>
+                      <th className="py-2 px-3">Fecha / Hora</th>
+                      <th className="py-2 px-3">Paciente</th>
+                      <th className="py-2 px-3">Médico</th>
+                      <th className="py-2 px-3">Resultado / Evento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialLlamados.map((h, i) => (
+                      <tr key={i} className={`border-b ${
+                        temaClaro ? 'border-slate-100 hover:bg-slate-50' : 'border-slate-800/50 hover:bg-slate-800/40'
+                      }`}>
+                        <td className="py-2 px-3 font-mono font-bold text-slate-400">
+                          {h.fechaFormateada} {h.horaFormateada}
+                        </td>
+                        <td className="py-2 px-3 font-bold text-cyan-400 uppercase">{h.paciente}</td>
+                        <td className="py-2 px-3">{h.medico}</td>
+                        <td className="py-2 px-3 font-bold">
+                          {h.estado === 'NO_RESPONDIO' && (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              NO RESPONDIO
+                            </span>
+                          )}
+                          {h.estado === 'LLAMADO' && (
+                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                              PRIMER LLAMADO
+                            </span>
+                          )}
+                          {h.estado === 'RE_LLAMADO' && (
+                            <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                              RE-LLAMADO
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setMostrarModalHistorial(false)}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resto de modales (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
