@@ -7,14 +7,14 @@ import {
   setPersistence,
   inMemoryPersistence 
 } from 'firebase/auth';
-import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc, updateDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { 
   Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, 
   CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
-  Timer, History, UserMinus, AlertCircle, UserMatch, Check
+  Timer, History, UserMinus, AlertCircle, Check
 } from 'lucide-react';
 
 export default function App() {
@@ -29,15 +29,19 @@ export default function App() {
   const [duplicadosOmitidos, setDuplicadosOmitidos] = useState([]);
   const [mostrarModalReporte, setMostrarModalReporte] = useState(false);
 
-  // Estados para Llamar Paciente en Emergencia
+  // Estados para Llamar Paciente
   const [medicoParaLlamar, setMedicoParaLlamar] = useState(null);
   const [nombrePaciente, setNombrePaciente] = useState('');
+
+  // Estado para Editar Nombre del Paciente en Llamada Activa (Punto 2)
+  const [medicoParaEditarPaciente, setMedicoParaEditarPaciente] = useState(null);
+  const [nuevoNombreEditado, setNuevoNombreEditado] = useState('');
 
   // Historial General de Llamados (Firestore) y Modal de Auditoría
   const [historialLlamados, setHistorialLlamados] = useState([]);
   const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
 
-  // Selección de servicio activo (Consulta Externa vs Emergencia)
+  // Selección de servicio activo
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
 
   // Modo Tema (Oscuro por defecto / Claro)
@@ -47,84 +51,48 @@ export default function App() {
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
-  // Configuración estilizada de estados
+  // Configuración de estados
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
-      badge: temaClaro 
-        ? "bg-emerald-600 text-white font-extrabold shadow-sm" 
-        : "bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20", 
-      cardColor: temaClaro 
-        ? "bg-white border border-emerald-400 shadow-lg shadow-emerald-500/5 ring-1 ring-emerald-500/20" 
-        : "bg-slate-900/90 border border-emerald-500/50 shadow-xl shadow-emerald-950/50 ring-1 ring-emerald-500/20",
-      buttonActive: temaClaro
-        ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20 ring-1 ring-emerald-400"
-        : "bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/30 ring-1 ring-emerald-300",
+      badge: temaClaro ? "bg-emerald-600 text-white font-extrabold shadow-sm" : "bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20", 
+      cardColor: temaClaro ? "bg-white border border-emerald-400 shadow-lg shadow-emerald-500/5 ring-1 ring-emerald-500/20" : "bg-slate-900/90 border border-emerald-500/50 shadow-xl shadow-emerald-950/50 ring-1 ring-emerald-500/20",
+      buttonActive: temaClaro ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20 ring-1 ring-emerald-400" : "bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/30 ring-1 ring-emerald-300",
       icon: UserCheck 
     },
     PROGRAMADO: {
       label: "Próximo Turno",
-      badge: temaClaro 
-        ? "bg-blue-600 text-white font-extrabold shadow-sm" 
-        : "bg-blue-500 text-slate-950 font-black shadow-md shadow-blue-500/20",
-      cardColor: temaClaro 
-        ? "bg-white border border-slate-300 shadow-sm" 
-        : "bg-slate-900/90 border border-slate-800 shadow-md",
-      buttonActive: temaClaro
-        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 ring-1 ring-blue-400"
-        : "bg-blue-500 text-slate-950 border-blue-400 shadow-md shadow-blue-500/30 ring-1 ring-blue-300",
+      badge: temaClaro ? "bg-blue-600 text-white font-extrabold shadow-sm" : "bg-blue-500 text-slate-950 font-black shadow-md shadow-blue-500/20",
+      cardColor: temaClaro ? "bg-white border border-slate-300 shadow-sm" : "bg-slate-900/90 border border-slate-800 shadow-md",
+      buttonActive: temaClaro ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20 ring-1 ring-blue-400" : "bg-blue-500 text-slate-950 border-blue-400 shadow-md shadow-blue-500/30 ring-1 ring-blue-300",
       icon: CalendarClock
     },
     PAUSA: { 
       label: "En Pausa", 
-      badge: temaClaro 
-        ? "bg-amber-500 text-white font-extrabold shadow-sm" 
-        : "bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-500/20", 
-      cardColor: temaClaro 
-        ? "bg-white border border-amber-400 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/20" 
-        : "bg-slate-900/90 border border-amber-500/50 shadow-xl shadow-amber-950/50 ring-1 ring-amber-500/20",
-      buttonActive: temaClaro
-        ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20 ring-1 ring-amber-300"
-        : "bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/30 ring-1 ring-amber-200",
+      badge: temaClaro ? "bg-amber-500 text-white font-extrabold shadow-sm" : "bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-500/20", 
+      cardColor: temaClaro ? "bg-white border border-amber-400 shadow-lg shadow-amber-500/5 ring-1 ring-amber-500/20" : "bg-slate-900/90 border border-amber-500/50 shadow-xl shadow-amber-950/50 ring-1 ring-amber-500/20",
+      buttonActive: temaClaro ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/20 ring-1 ring-amber-300" : "bg-amber-400 text-slate-950 border-amber-300 shadow-md shadow-amber-400/30 ring-1 ring-amber-200",
       icon: Coffee 
     },
     AUSENTE: { 
       label: "Ausente", 
-      badge: temaClaro 
-        ? "bg-rose-600 text-white font-extrabold shadow-sm" 
-        : "bg-rose-500 text-white font-black shadow-md shadow-rose-500/20", 
-      cardColor: temaClaro 
-        ? "bg-white border border-rose-400 shadow-lg shadow-rose-500/5 ring-1 ring-rose-500/20" 
-        : "bg-slate-900/90 border border-rose-500/50 shadow-xl shadow-rose-950/50 ring-1 ring-rose-500/20",
-      buttonActive: temaClaro
-        ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20 ring-1 ring-rose-400"
-        : "bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-500/30 ring-1 ring-rose-300",
+      badge: temaClaro ? "bg-rose-600 text-white font-extrabold shadow-sm" : "bg-rose-500 text-white font-black shadow-md shadow-rose-500/20", 
+      cardColor: temaClaro ? "bg-white border border-rose-400 shadow-lg shadow-rose-500/5 ring-1 ring-rose-500/20" : "bg-slate-900/90 border border-rose-500/50 shadow-xl shadow-rose-950/50 ring-1 ring-rose-500/20",
+      buttonActive: temaClaro ? "bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-600/20 ring-1 ring-rose-400" : "bg-rose-500 text-white border-rose-400 shadow-md shadow-rose-500/30 ring-1 ring-rose-300",
       icon: UserX 
     },
     LLAMANDO: { 
       label: "Llamando...", 
-      badge: temaClaro 
-        ? "bg-cyan-600 text-white font-black shadow-md animate-pulse" 
-        : "bg-cyan-400 text-slate-950 font-black shadow-lg shadow-cyan-400/40 animate-pulse", 
-      cardColor: temaClaro 
-        ? "bg-cyan-50/80 border-2 border-cyan-400 shadow-xl ring-2 ring-cyan-400/20" 
-        : "bg-slate-900/95 border-2 border-cyan-400/80 shadow-2xl ring-2 ring-cyan-400/30 animate-pulse",
-      buttonActive: temaClaro
-        ? "bg-cyan-600 text-white border-cyan-600 shadow-md shadow-cyan-600/20 ring-1 ring-cyan-400"
-        : "bg-cyan-400 text-slate-950 border-cyan-300 shadow-md shadow-cyan-400/30 ring-1 ring-cyan-200",
+      badge: temaClaro ? "bg-cyan-600 text-white font-black shadow-md animate-pulse" : "bg-cyan-400 text-slate-950 font-black shadow-lg shadow-cyan-400/40 animate-pulse", 
+      cardColor: temaClaro ? "bg-cyan-50/80 border-2 border-cyan-400 shadow-xl ring-2 ring-cyan-400/20" : "bg-slate-900/95 border-2 border-cyan-400/80 shadow-2xl ring-2 ring-cyan-400/30 animate-pulse",
+      buttonActive: temaClaro ? "bg-cyan-600 text-white border-cyan-600 shadow-md shadow-cyan-600/20 ring-1 ring-cyan-400" : "bg-cyan-400 text-slate-950 border-cyan-300 shadow-md shadow-cyan-400/30 ring-1 ring-cyan-200",
       icon: Bell 
     },
     CULMINADO: {
       label: "Turno Culminado",
-      badge: temaClaro 
-        ? "bg-slate-500 text-white font-bold" 
-        : "bg-slate-700 text-slate-300 font-bold",
-      cardColor: temaClaro 
-        ? "bg-slate-100/80 border border-slate-300 opacity-60" 
-        : "bg-slate-900/40 border border-slate-800/80 opacity-50",
-      buttonActive: temaClaro
-        ? "bg-slate-600 text-white border-slate-600 shadow-sm"
-        : "bg-slate-700 text-slate-200 border-slate-600 shadow-sm",
+      badge: temaClaro ? "bg-slate-500 text-white font-bold" : "bg-slate-700 text-slate-300 font-bold",
+      cardColor: temaClaro ? "bg-slate-100/80 border border-slate-300 opacity-60" : "bg-slate-900/40 border border-slate-800/80 opacity-50",
+      buttonActive: temaClaro ? "bg-slate-600 text-white border-slate-600 shadow-sm" : "bg-slate-700 text-slate-200 border-slate-600 shadow-sm",
       icon: CheckSquare
     }
   };
@@ -141,39 +109,25 @@ export default function App() {
   const [medicoParaReemplazo, setMedicoParaReemplazo] = useState(null);
   const [nombreReemplazo, setNombreReemplazo] = useState('');
 
-  // Modal para Editar Campos de la Programación (ADMIN)
+  // Modal para Editar Campos de la Programación
   const [medicoParaEditar, setMedicoParaEditar] = useState(null);
   const [formEdicion, setFormEdicion] = useState({
-    Medico: '',
-    Area: '',
-    Rol: '',
-    Modulo: '',
-    Hora_Inicio: '',
-    Hora_Fin: '',
-    Fecha: '',
-    TipoServicio: 'CONSULTA_EXTERNA'
+    Medico: '', Area: '', Rol: '', Modulo: '', Hora_Inicio: '', Hora_Fin: '', Fecha: '', TipoServicio: 'CONSULTA_EXTERNA'
   });
 
-  // Modal para Agregar Nuevo Registro Manual (ADMIN)
+  // Modal para Agregar Registro Manual
   const [mostrarModalNuevoRegistro, setMostrarModalNuevoRegistro] = useState(false);
   const [formNuevo, setFormNuevo] = useState({
-    Medico: '',
-    Area: '',
-    Rol: '',
-    Modulo: '',
-    Hora_Inicio: '',
-    Hora_Fin: '',
-    Fecha: '',
-    TipoServicio: 'CONSULTA_EXTERNA'
+    Medico: '', Area: '', Rol: '', Modulo: '', Hora_Inicio: '', Hora_Fin: '', Fecha: '', TipoServicio: 'CONSULTA_EXTERNA'
   });
 
-  // Modo TV Inteligente
+  // Modo TV
   const [modoTvActivo, setModoTvActivo] = useState(false);
   const [indiceRotacionTv, setIndiceRotacionTv] = useState(0);
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
 
-  // Sistema de Cola de Llamados e Historia de Procesados
+  // Sistema de Cola de Llamados
   const colaLlamadosRef = useRef([]);
   const reproduciendoAudioRef = useRef(false);
   const llamadosProcesadosRef = useRef(new Set());
@@ -184,7 +138,6 @@ export default function App() {
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
   };
 
-  // Cálculo del tiempo transcurrido
   const obtenerTiempoTranscurrido = (fechaIso) => {
     if (!fechaIso) return null;
     const inicio = new Date(fechaIso).getTime();
@@ -207,7 +160,6 @@ export default function App() {
     return palabrasClave.some(p => texto.includes(p));
   };
 
-  // Procesador Secuencial de la Cola de Llamados
   const procesarSiguienteLlamado = () => {
     if (reproduciendoAudioRef.current || colaLlamadosRef.current.length === 0) return;
 
@@ -243,13 +195,12 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  // 1. Guardar Entrada en la Colección 1: "historial_llamados" (Auditoría Global)
   const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio) => {
     try {
       await addDoc(collection(db, "historial_llamados"), {
         medico: medico || "Desconocido",
         paciente: paciente || "Desconocido",
-        estado: estadoLlamado, // 'LLAMADO', 'NO_RESPONDIO', 'ATENDIDO'
+        estado: estadoLlamado,
         servicio: servicio || 'EMERGENCIA',
         fechaIso: new Date().toISOString(),
         fechaFormateada: obtenerFechaHoyLocal(),
@@ -260,13 +211,12 @@ export default function App() {
     }
   };
 
-  // 2. Guardar Entrada en la Colección 2: "pacientes_medico" (Historial Individual del Médico)
   const registrarEnPacientesMedico = async (medico, paciente, estadoFinal) => {
     try {
       await addDoc(collection(db, "pacientes_medico"), {
         medico: medico || "Desconocido",
         paciente: paciente || "Desconocido",
-        tipoRegistro: estadoFinal, // 'NO_RESPONDIO' o 'ATENDIDO'
+        tipoRegistro: estadoFinal,
         fechaFormateada: obtenerFechaHoyLocal(),
         horaFormateada: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
         fechaIso: new Date().toISOString()
@@ -276,18 +226,14 @@ export default function App() {
     }
   };
 
-  // Marcar Paciente que No Respondió al Llamado
   const marcarPacienteNoRespondio = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
     try {
       const pacienteNombre = medObj.pacienteLlamado;
-
-      // Guardar en ambas colecciones
       await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'NO_RESPONDIO', servicioActivo);
       await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'NO_RESPONDIO');
 
-      // Limpiar llamada activa en el registro del médico
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
       const ahoraIso = new Date().toISOString();
@@ -303,22 +249,18 @@ export default function App() {
 
       await batch.commit();
     } catch (err) {
-      console.error("Error al registrar inasistencia de paciente:", err);
+      console.error("Error al registrar inasistencia:", err);
     }
   };
 
-  // Marcar Paciente Atendido Exitosamente
   const marcarPacienteAtendido = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
     try {
       const pacienteNombre = medObj.pacienteLlamado;
-
-      // Guardar en ambas colecciones
       await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'ATENDIDO', servicioActivo);
       await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'ATENDIDO');
 
-      // Cambiar a En Consulta
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
       const ahoraIso = new Date().toISOString();
@@ -334,11 +276,10 @@ export default function App() {
 
       await batch.commit();
     } catch (err) {
-      console.error("Error al registrar paciente atendido:", err);
+      console.error("Error al registrar atendido:", err);
     }
   };
 
-  // Volver a llamar al paciente
   const volverALlamarPaciente = async (medObj, nombreDirecto = null) => {
     const pacienteAVisar = nombreDirecto || medObj?.pacienteLlamado;
     if (!medObj || !pacienteAVisar) return;
@@ -358,10 +299,50 @@ export default function App() {
       });
 
       await batch.commit();
-
       await registrarEnHistorialFirestore(medObj.Medico, pacienteAVisar, 'RE_LLAMADO', servicioActivo);
     } catch (err) {
-      console.error("Error al volver a llamar al paciente:", err);
+      console.error("Error al re-llamar paciente:", err);
+    }
+  };
+
+  // PUNTO 2: FUNCIÓN PARA ACTUALIZAR NOMBRE EDITADO DIRECTAMENTE EN FIREBASE (Sin duplicar)
+  const guardarEdicionNombrePaciente = async (e) => {
+    e.preventDefault();
+    if (!medicoParaEditarPaciente || !nuevoNombreEditado.trim()) return;
+
+    const nombreLimpio = nuevoNombreEditado.trim().toUpperCase();
+    const nombreAnterior = medicoParaEditarPaciente.pacienteLlamado;
+
+    try {
+      // 1. Actualizar el documento de la programación médica sin crear uno nuevo
+      const ids = Array.isArray(medicoParaEditarPaciente.ids) ? medicoParaEditarPaciente.ids : [medicoParaEditarPaciente.id];
+      const batch = writeBatch(db);
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          pacienteLlamado: nombreLimpio
+        });
+      });
+
+      await batch.commit();
+
+      // 2. Opcional: Actualizar las entradas recientes asociadas al llamado en el historial de llamadas
+      const snapshotHistorial = await getDocs(collection(db, "historial_llamados"));
+      snapshotHistorial.docs.forEach(async (d) => {
+        const data = d.data();
+        if (data.medico === medicoParaEditarPaciente.Medico && data.paciente === nombreAnterior) {
+          await updateDoc(doc(db, "historial_llamados", d.id), {
+            paciente: nombreLimpio
+          });
+        }
+      });
+
+      setMedicoParaEditarPaciente(null);
+      setNuevoNombreEditado('');
+    } catch (err) {
+      console.error("Error al actualizar el nombre del paciente:", err);
+      alert("Error al actualizar el nombre del paciente.");
     }
   };
 
@@ -376,7 +357,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Detección de llamados para reproducir en pantalla
+  // Detección de llamados para reproducir voz
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
 
@@ -495,12 +476,12 @@ export default function App() {
     }
 
     if (estaActivo && nuevoEstado === "PROGRAMADO") {
-      alert("No se puede asignar 'Próximo Turno' a un médico que se encuentra actualmente en turno activo de consultorio.");
+      alert("No se puede asignar 'Próximo Turno' a un médico que se encuentra en turno activo.");
       return;
     }
 
     if (estaActivo && nuevoEstado === "CULMINADO" && !estaEnUltimaHora) {
-      alert("Solo se puede marcar como CULMINADO dentro de la última hora del turno activo (60 minutos antes de finalizar).");
+      alert("Solo se puede marcar como CULMINADO dentro de la última hora del turno activo.");
       return;
     }
 
@@ -544,13 +525,12 @@ export default function App() {
       });
 
       await batch.commit();
-
       await registrarEnHistorialFirestore(medicoParaLlamar.Medico, nombreLimpio, 'LLAMADO', servicioActivo);
 
       setMedicoParaLlamar(null);
       setNombrePaciente('');
     } catch (err) {
-      console.error("Error al registrar llamada de paciente:", err);
+      console.error("Error al llamar paciente:", err);
     }
   };
 
@@ -576,7 +556,6 @@ export default function App() {
       setNombreReemplazo('');
     } catch (err) {
       console.error("Error asignando reemplazo:", err);
-      alert("Error al guardar reemplazo.");
     }
   };
 
@@ -642,7 +621,6 @@ export default function App() {
       setMedicoParaEditar(null);
     } catch (err) {
       console.error("Error al editar programación:", err);
-      alert("Ocurrió un error al guardar los cambios.");
     }
   };
 
@@ -658,8 +636,7 @@ export default function App() {
       });
       await batch.commit();
     } catch (err) {
-      console.error("Error al eliminar registro:", err);
-      alert("Error al eliminar el registro.");
+      console.error("Error al eliminar:", err);
     }
   };
 
@@ -686,18 +663,10 @@ export default function App() {
 
       setMostrarModalNuevoRegistro(false);
       setFormNuevo({
-        Medico: '',
-        Area: '',
-        Rol: '',
-        Modulo: '',
-        Hora_Inicio: '',
-        Hora_Fin: '',
-        Fecha: obtenerFechaHoyLocal(),
-        TipoServicio: servicioActivo
+        Medico: '', Area: '', Rol: '', Modulo: '', Hora_Inicio: '', Hora_Fin: '', Fecha: obtenerFechaHoyLocal(), TipoServicio: servicioActivo
       });
     } catch (err) {
-      console.error("Error al agregar registro:", err);
-      alert("Error al guardar el nuevo registro.");
+      console.error("Error al agregar nuevo registro:", err);
     }
   };
 
@@ -784,7 +753,6 @@ export default function App() {
       const cleanPassword = passwordInput.trim();
 
       await setPersistence(auth, inMemoryPersistence);
-
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
       const user = userCredential.user;
 
@@ -799,7 +767,6 @@ export default function App() {
       setEmailInput('');
       setPasswordInput('');
     } catch (error) {
-      console.error("Error al iniciar sesión:", error.code, error.message);
       setErrorPin(true);
     }
   };
@@ -982,12 +949,11 @@ export default function App() {
           setDuplicadosOmitidos(listaDuplicados);
           setMostrarModalReporte(true);
         } else {
-          alert(`¡Carga exitosa! Se guardaron ${registrosProcesadosCount} registros nuevos correctamente.`);
+          alert(`¡Carga exitosa! Se guardaron ${registrosProcesadosCount} registros nuevos.`);
         }
 
       } catch (err) {
         console.error("Error en la subida:", err);
-        alert("Ocurrió un error al procesar el archivo Excel.");
       } finally {
         setCargando(false);
         e.target.value = null;
@@ -1018,9 +984,7 @@ export default function App() {
       const fechaHoy = obtenerFechaHoyLocal();
 
       programacion.forEach((item) => {
-        if (item.Fecha && item.Fecha !== fechaHoy) {
-          return;
-        }
+        if (item.Fecha && item.Fecha !== fechaHoy) return;
 
         const nombreMedico = (item.Medico || "Sin Nombre").toLowerCase().trim();
         const key = `${item.Modulo || "Módulo General"}_${item.Area || "General"}_${nombreMedico}`;
@@ -1163,18 +1127,22 @@ export default function App() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={() => setMostrarModalHistorial(true)}
-            className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
-              temaClaro 
-                ? 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100' 
-                : 'bg-purple-900/30 text-purple-300 border-purple-700/50 hover:bg-purple-800/50'
-            }`}
-            title="Ver auditoría de llamadas e inasistencias"
-          >
-            <History className="w-4 h-4 text-purple-400" />
-            <span>Auditoría de Llamados</span>
-          </button>
+          
+          {/* PUNTO 1: SOLICITUD 1 -> SOLO MOSTRAR AUDITORÍA A ADMIN O OPERADOR */}
+          {puedeModificarEstados && (
+            <button
+              onClick={() => setMostrarModalHistorial(true)}
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
+                temaClaro 
+                  ? 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100' 
+                  : 'bg-purple-900/30 text-purple-300 border-purple-700/50 hover:bg-purple-800/50'
+              }`}
+              title="Ver auditoría de llamados e inasistencias"
+            >
+              <History className="w-4 h-4 text-purple-400" />
+              <span>Auditoría de Llamados</span>
+            </button>
+          )}
 
           <button
             onClick={() => setSoloTurnoActual(!soloTurnoActual)}
@@ -1205,7 +1173,6 @@ export default function App() {
                 ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200' 
                 : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
             }`}
-            title={temaClaro ? "Modo Oscuro" : "Modo Claro"}
           >
             {temaClaro ? <Sun className="w-4 h-4 text-amber-600" /> : <Moon className="w-4 h-4 text-blue-400" />}
           </button>
@@ -1256,19 +1223,11 @@ export default function App() {
                   <button
                     onClick={() => {
                       setFormNuevo({
-                        Medico: '',
-                        Area: '',
-                        Rol: '',
-                        Modulo: '',
-                        Hora_Inicio: '',
-                        Hora_Fin: '',
-                        Fecha: obtenerFechaHoyLocal(),
-                        TipoServicio: servicioActivo
+                        Medico: '', Area: '', Rol: '', Modulo: '', Hora_Inicio: '', Hora_Fin: '', Fecha: obtenerFechaHoyLocal(), TipoServicio: servicioActivo
                       });
                       setMostrarModalNuevoRegistro(true);
                     }}
                     className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-xs font-semibold transition shadow-lg"
-                    title="Agregar Nuevo Registro Manual"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Nuevo Registro</span>
@@ -1279,7 +1238,6 @@ export default function App() {
                     className={`p-2 border rounded-xl transition ${
                       temaClaro ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50' : 'bg-slate-700 hover:bg-slate-600 text-cyan-300 border-slate-600'
                     }`}
-                    title="Editar Anuncio"
                   >
                     <Edit3 className="w-4 h-4" />
                   </button>
@@ -1289,7 +1247,6 @@ export default function App() {
                       onClick={limpiarBaseDatos} 
                       disabled={cargando}
                       className="p-2 bg-red-100 hover:bg-red-200 text-red-700 border border-red-300 rounded-xl transition"
-                      title="Limpiar toda la base de datos"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1308,7 +1265,6 @@ export default function App() {
                 className={`p-2 rounded-xl transition border ${
                   temaClaro ? 'bg-white text-slate-700 border-slate-300' : 'bg-slate-700 text-slate-300 border-slate-600'
                 }`}
-                title="Cerrar Sesión"
               >
                 <Unlock className="w-4 h-4 text-emerald-500" />
               </button>
@@ -1319,7 +1275,6 @@ export default function App() {
               className={`p-2.5 border rounded-xl transition ${
                 temaClaro ? 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200' : 'bg-slate-800/50 hover:bg-slate-800 text-slate-400 border-slate-700/50'
               }`}
-              title="Acceso Administrador / Operador"
             >
               <Lock className="w-4 h-4" />
             </button>
@@ -1327,27 +1282,12 @@ export default function App() {
         </div>
       </header>
 
-      {/* Marquee del Comunicado Informativo */}
+      {/* Marquee Informativo */}
       {comunicado && (
         <div className={`py-2 px-4 border-b flex items-center gap-3 overflow-hidden ${
           temaClaro ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-blue-950/40 border-blue-900/50 text-blue-300'
         }`}>
-          <style>
-            {`
-              @keyframes scroll-text {
-                0% { transform: translateX(0); }
-                100% { transform: translateX(-100%); }
-              }
-              .animacion-marquee {
-                display: inline-block;
-                padding-left: 100%;
-                animation: scroll-text 25s linear infinite;
-              }
-            `}
-          </style>
-          
           <Megaphone className="w-4 h-4 shrink-0 text-cyan-500 animate-bounce relative z-10" />
-          
           <div className="overflow-hidden w-full whitespace-nowrap">
             <p className="animacion-marquee text-xs font-semibold tracking-wide uppercase">
               {comunicado}
@@ -1356,17 +1296,17 @@ export default function App() {
         </div>
       )}
 
-      {/* Vista Principal de la Programación */}
+      {/* Vista Principal */}
       <main ref={mainScrollRef} className="flex-1 p-8 overflow-y-auto relative">
         {Object.keys(agrupadoPorModulo).length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4">
             <Activity className="w-16 h-16 text-slate-400 animate-bounce" />
             <p className="text-xl font-medium text-center">
               {modulosSeleccionados.length === 0
-                ? "No hay ningún módulo seleccionado. Haz clic en 'Módulos' arriba para activarlos."
+                ? "No hay ningún módulo seleccionado."
                 : soloTurnoActual 
-                  ? `No hay personal médico atendiendo en este momento en ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'}.` 
-                  : `No hay programación cargada o filtrada para el área de ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'}.`}
+                  ? `No hay personal médico atendiendo en este momento.` 
+                  : `No hay programación cargada para este servicio.`}
             </p>
           </div>
         ) : (
@@ -1422,14 +1362,7 @@ export default function App() {
                         "CULMINADO": 6
                       };
 
-                      const pesoA = prioridad[estadoA] || 10;
-                      const pesoB = prioridad[estadoB] || 10;
-
-                      if (pesoA === pesoB) {
-                        return (a.Medico || "").localeCompare(b.Medico || "");
-                      }
-
-                      return pesoA - pesoB;
+                      return (prioridad[estadoA] || 10) - (prioridad[estadoB] || 10);
                     })
                     .map((med, mIdx) => {
                       const estaActivoAhora = estaEnTurno(med.horarios);
@@ -1439,7 +1372,6 @@ export default function App() {
                       const IconoEstado = configEstado.icon;
                       const tiempoTranscurrido = obtenerTiempoTranscurrido(med.estadoUltimoCambio);
 
-                      // Inasistentes específicos de hoy para este médico
                       const inasistentesMed = historialLlamados.filter(
                         h => h.medico === med.Medico && h.estado === 'NO_RESPONDIO' && h.fechaFormateada === obtenerFechaHoyLocal()
                       );
@@ -1450,7 +1382,7 @@ export default function App() {
                           className={`p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 ${configEstado.cardColor}`}
                         >
                           <div>
-                            {/* Cabecera: Nombre y Botones de Edición / Eliminar */}
+                            {/* Cabecera */}
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
@@ -1462,33 +1394,49 @@ export default function App() {
                                   </p>
                                 )}
 
-                                {/* Aviso de Paciente Llamado con Botones de Acción */}
+                                {/* PUNTO 2: SOLICITUD 2 -> CUADRO DE LLAMANDO MÁS LARGO + BOTÓN DE EDITAR NOMBRE DE PACIENTE */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
-                                  <div className={`mt-3 p-3 rounded-2xl border-2 flex flex-col gap-2.5 shadow-lg ${
+                                  <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full min-w-[320px] max-w-md ${
                                     temaClaro 
                                       ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
                                       : 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-rose-950/50'
                                   } animate-pulse`}>
-                                    <div className="flex items-center gap-2.5 overflow-hidden">
-                                      <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
-                                      <div className="overflow-hidden">
-                                        <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
-                                          Llamando a:
-                                        </p>
-                                        <p className={`text-sm font-black leading-tight truncate ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
-                                          {med.pacienteLlamado}
-                                        </p>
+                                    <div className="flex items-center justify-between gap-3">
+                                      <div className="flex items-center gap-2.5 overflow-hidden flex-1">
+                                        <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
+                                        <div className="overflow-hidden w-full">
+                                          <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
+                                            Llamando a:
+                                          </p>
+                                          <p className={`text-base font-black leading-tight tracking-wide break-words ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
+                                            {med.pacienteLlamado}
+                                          </p>
+                                        </div>
                                       </div>
+
+                                      {/* BOTÓN EDICIÓN NOMBRE DE PACIENTE */}
+                                      {puedeModificarEstados && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setMedicoParaEditarPaciente(med);
+                                            setNuevoNombreEditado(med.pacienteLlamado);
+                                          }}
+                                          className="p-2 bg-slate-800/80 hover:bg-slate-700 text-amber-400 border border-amber-500/40 rounded-xl transition shrink-0"
+                                          title="Corregir error de digitación en el nombre del paciente"
+                                        >
+                                          <Pencil className="w-3.5 h-3.5" />
+                                        </button>
+                                      )}
                                     </div>
 
-                                    {/* Botones de acción del llamado */}
+                                    {/* Botonera del Llamado */}
                                     {puedeModificarEstados && (
-                                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-500/30">
                                         <button
                                           type="button"
                                           onClick={() => volverALlamarPaciente(med)}
                                           className="flex-1 px-2 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                          title="Volver a hacer sonar la llamada en la pantalla TV"
                                         >
                                           <RefreshCw className="w-3.5 h-3.5" />
                                           <span>Re-llamar</span>
@@ -1498,7 +1446,6 @@ export default function App() {
                                           type="button"
                                           onClick={() => marcarPacienteAtendido(med)}
                                           className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                          title="Marcar paciente como ATENDIDO"
                                         >
                                           <Check className="w-3.5 h-3.5" />
                                           <span>Atendido</span>
@@ -1508,7 +1455,6 @@ export default function App() {
                                           type="button"
                                           onClick={() => marcarPacienteNoRespondio(med)}
                                           className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                          title="Registrar que el paciente no acudió al llamado"
                                         >
                                           <UserMinus className="w-3.5 h-3.5" />
                                           <span>No Respondió</span>
@@ -1518,8 +1464,8 @@ export default function App() {
                                   </div>
                                 )}
 
-                                {/* Lista Rápida de Pacientes Inasistentes para este médico */}
-                                {inasistentesMed.length > 0 && (
+                                {/* PUNTO 3: SOLICITUD 3 -> NO RESPONDIERON HOY SOLO VISIBLE PARA OPERADOR Y ADMIN (OCULTO EN VISTA PÚBLICA/TV) */}
+                                {puedeModificarEstados && !modoTvActivo && inasistentesMed.length > 0 && (
                                   <div className="mt-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1.5">
                                     <p className="text-[10px] font-black uppercase text-amber-500 flex items-center gap-1">
                                       <AlertCircle className="w-3 h-3" />
@@ -1532,16 +1478,13 @@ export default function App() {
                                             <span className="font-bold text-white truncate block">{ina.paciente}</span>
                                             <span className="text-[9px] text-slate-400 font-mono">{ina.horaFormateada}</span>
                                           </div>
-                                          {puedeModificarEstados && (
-                                            <button
-                                              onClick={() => volverALlamarPaciente(med, ina.paciente)}
-                                              className="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold text-[10px] shrink-0 flex items-center gap-1"
-                                              title="Volver a llamar a este paciente"
-                                            >
-                                              <RefreshCw className="w-2.5 h-2.5" />
-                                              Llamar
-                                            </button>
-                                          )}
+                                          <button
+                                            onClick={() => volverALlamarPaciente(med, ina.paciente)}
+                                            className="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold text-[10px] shrink-0 flex items-center gap-1"
+                                          >
+                                            <RefreshCw className="w-2.5 h-2.5" />
+                                            Llamar
+                                          </button>
                                         </div>
                                       ))}
                                     </div>
@@ -1565,7 +1508,6 @@ export default function App() {
                                           ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' 
                                           : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
                                       }`}
-                                      title="Editar Campos del Registro"
                                     >
                                       <Pencil className="w-3.5 h-3.5" />
                                     </button>
@@ -1573,7 +1515,6 @@ export default function App() {
                                     <button
                                       onClick={() => eliminarRegistroIndividual(med)}
                                       className="p-1.5 rounded-lg border bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20 transition"
-                                      title="Eliminar este Registro"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
@@ -1582,7 +1523,7 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Badges Neutros de Área y Rol */}
+                            {/* Área y Rol */}
                             <div className="flex flex-wrap items-center gap-2 mb-3">
                               <span className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
                                 temaClaro 
@@ -1602,7 +1543,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Horarios / Turnos */}
+                            {/* Horarios */}
                             <div className="space-y-1 mb-4">
                               <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
                                 Horarios / Turnos:
@@ -1666,7 +1607,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Contenedor de Estado y Controles del Médico con Cronómetro */}
+                          {/* Contenedor de Estado y Botonera */}
                           <div className={`mt-2 p-3 rounded-xl border space-y-3 ${
                             temaClaro 
                               ? 'bg-slate-50 border-slate-200/80 shadow-inner' 
@@ -1691,7 +1632,6 @@ export default function App() {
                                     className={`p-1.5 rounded-lg border transition ${
                                       temaClaro ? 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50' : 'bg-purple-900/40 text-purple-300 border-purple-700/50 hover:bg-purple-800/50'
                                     }`}
-                                    title="Asignar Reemplazo"
                                   >
                                     <UserPlus className="w-3.5 h-3.5" />
                                   </button>
@@ -1701,7 +1641,6 @@ export default function App() {
                                       className={`p-1.5 rounded-lg border transition ${
                                         temaClaro ? 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50' : 'bg-amber-900/40 text-amber-300 border-amber-700/50 hover:bg-amber-800/50'
                                       }`}
-                                      title="Restaurar Titular"
                                     >
                                       <RefreshCw className="w-3.5 h-3.5" />
                                     </button>
@@ -1718,14 +1657,10 @@ export default function App() {
                                   const configBtn = ESTADOS_MEDICO[key];
 
                                   let esBloqueado = false;
-                                  let tooltipBloqueo = configBtn.label;
-
                                   if (estaActivoAhora && key === "PROGRAMADO") {
                                     esBloqueado = true;
-                                    tooltipBloqueo = "Deshabilitado: El profesional ya se encuentra atendiendo en turno activo";
                                   } else if (estaActivoAhora && key === "CULMINADO" && !enUltimaHora) {
                                     esBloqueado = true;
-                                    tooltipBloqueo = "Habilitado solo dentro de la última hora de la programación (60 min antes de finalizar)";
                                   }
 
                                   return (
@@ -1733,7 +1668,6 @@ export default function App() {
                                       key={key}
                                       disabled={esBloqueado}
                                       onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora, med)}
-                                      title={tooltipBloqueo}
                                       className={`py-1.5 text-[10px] font-black tracking-wider rounded-lg border transition shadow-sm ${
                                         esBloqueado
                                           ? 'bg-slate-200/50 text-slate-400 border-slate-300/50 opacity-40 cursor-not-allowed dark:bg-slate-800/20 dark:text-slate-600 dark:border-slate-800/50'
@@ -1761,7 +1695,63 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL DE AUDITORÍA Y HISTORIAL GENERAL DE LLAMADOS */}
+      {/* PUNTO 2: MODAL PARA EDITAR EL NOMBRE DEL PACIENTE SIN CREAR NINGÚN DOCUMENTO DUPLICADO */}
+      {medicoParaEditarPaciente && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-amber-500">
+                <Pencil className="w-5 h-5 text-amber-500" />
+                Corregir Nombre del Paciente
+              </h3>
+              <button onClick={() => setMedicoParaEditarPaciente(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={guardarEdicionNombrePaciente} autoComplete="off" className="space-y-4">
+              <div>
+                <p className="text-xs text-slate-400 mb-2">
+                  Médico: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaEditarPaciente.Medico}</strong>
+                </p>
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nombre Correcto del Paciente:</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={nuevoNombreEditado}
+                  onChange={(e) => setNuevoNombreEditado(e.target.value)}
+                  required
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-bold uppercase focus:outline-none transition ${
+                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMedicoParaEditarPaciente(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-amber-600 text-white hover:bg-amber-500 transition shadow-lg flex items-center gap-1.5"
+                >
+                  <Check className="w-4 h-4" />
+                  Actualizar Registro
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE AUDITORÍA */}
       {mostrarModalHistorial && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-3xl rounded-3xl p-6 shadow-2xl border ${
@@ -1777,13 +1767,9 @@ export default function App() {
               </button>
             </div>
 
-            <p className="text-xs text-slate-400 mb-4">
-              Constancia en tiempo real guardada en Firestore sobre llamados, inasistencias y re-llamados para reportes oficiales.
-            </p>
-
             <div className="max-h-80 overflow-y-auto space-y-2 pr-1 mb-6">
               {historialLlamados.length === 0 ? (
-                <p className="text-sm text-slate-400 italic text-center py-6">No hay registros de llamados en la base de datos.</p>
+                <p className="text-sm text-slate-400 italic text-center py-6">No hay registros en la base de datos.</p>
               ) : (
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
@@ -1845,7 +1831,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Resto de Modales (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
+      {/* MODAL EDICIÓN REGISTRO MÉDICO */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1864,7 +1850,7 @@ export default function App() {
             <form onSubmit={guardarEdicionRegistro} autoComplete="off" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Servicio / Área Principal:</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Servicio:</label>
                   <select
                     value={formEdicion.TipoServicio}
                     onChange={(e) => setFormEdicion({ ...formEdicion, TipoServicio: e.target.value })}
@@ -1878,13 +1864,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Médico / Profesional:</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Médico:</label>
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
                     value={formEdicion.Medico}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Medico: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -1898,9 +1881,6 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
                     value={formEdicion.Area}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Area: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -1914,9 +1894,6 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
                     value={formEdicion.Rol}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Rol: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -1930,9 +1907,6 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
                     value={formEdicion.Modulo}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Modulo: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -1942,11 +1916,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Inicio (HH:MM):</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Inicio:</label>
                   <input
                     type="time"
                     required
-                    autoComplete="off"
                     value={formEdicion.Hora_Inicio}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Hora_Inicio: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -1956,11 +1929,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Fin (HH:MM):</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Fin:</label>
                   <input
                     type="time"
                     required
-                    autoComplete="off"
                     value={formEdicion.Hora_Fin}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Hora_Fin: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -1970,11 +1942,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Fecha de Programación:</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Fecha:</label>
                   <input
                     type="date"
                     required
-                    autoComplete="off"
                     value={formEdicion.Fecha}
                     onChange={(e) => setFormEdicion({ ...formEdicion, Fecha: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -2004,6 +1975,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL NUEVO REGISTRO */}
       {mostrarModalNuevoRegistro && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -2036,13 +2008,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Nombre del Médico:</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Médico:</label>
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
                     placeholder="Ej. Dr. Carlos Ramírez"
                     value={formNuevo.Medico}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Medico: e.target.value })}
@@ -2057,9 +2026,6 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
                     placeholder="Ej. Pediatría"
                     value={formNuevo.Area}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Area: e.target.value })}
@@ -2074,10 +2040,7 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
-                    placeholder="Ej. Consulta Médica / Emergencia"
+                    placeholder="Ej. Consulta Médica"
                     value={formNuevo.Rol}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Rol: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -2091,10 +2054,7 @@ export default function App() {
                   <input
                     type="text"
                     required
-                    autoComplete="off"
-                    autoCorrect="off"
-                    spellCheck="false"
-                    placeholder="Ej. Módulo 01 / Shock Trauma"
+                    placeholder="Ej. Módulo 01"
                     value={formNuevo.Modulo}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Modulo: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -2104,11 +2064,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Inicio (HH:MM):</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Inicio:</label>
                   <input
                     type="time"
                     required
-                    autoComplete="off"
                     value={formNuevo.Hora_Inicio}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Hora_Inicio: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -2118,11 +2077,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Fin (HH:MM):</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Hora Fin:</label>
                   <input
                     type="time"
                     required
-                    autoComplete="off"
                     value={formNuevo.Hora_Fin}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Hora_Fin: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -2132,11 +2090,10 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-400">Fecha de Programación:</label>
+                  <label className="block text-xs font-bold mb-1 text-slate-400">Fecha:</label>
                   <input
                     type="date"
                     required
-                    autoComplete="off"
                     value={formNuevo.Fecha}
                     onChange={(e) => setFormNuevo({ ...formNuevo, Fecha: e.target.value })}
                     className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none transition ${
@@ -2166,6 +2123,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL MÓDULOS */}
       {mostrarModalModulos && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -2197,27 +2155,23 @@ export default function App() {
             </div>
 
             <div className="max-h-60 overflow-y-auto space-y-2 pr-1 mb-6">
-              {todosLosModulosDisponibles.length === 0 ? (
-                <p className="text-sm text-slate-400 italic text-center py-4">No hay módulos cargados.</p>
-              ) : (
-                todosLosModulosDisponibles.map((mod, i) => {
-                  const seleccionado = modulosSeleccionados.includes(mod);
-                  return (
-                    <label
-                      key={i}
-                      onClick={() => toggleModuloSeleccionado(mod)}
-                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
-                        seleccionado
-                          ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
-                          : temaClaro ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-slate-800/40 border-slate-800 text-slate-400'
-                      }`}
-                    >
-                      <span className="text-xs font-bold">{mod}</span>
-                      {seleccionado ? <CheckSquare className="w-4 h-4 text-cyan-400" /> : <Square className="w-4 h-4 text-slate-500" />}
-                    </label>
-                  );
-                })
-              )}
+              {todosLosModulosDisponibles.map((mod, i) => {
+                const seleccionado = modulosSeleccionados.includes(mod);
+                return (
+                  <label
+                    key={i}
+                    onClick={() => toggleModuloSeleccionado(mod)}
+                    className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
+                      seleccionado
+                        ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
+                        : temaClaro ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-slate-800/40 border-slate-800 text-slate-400'
+                    }`}
+                  >
+                    <span className="text-xs font-bold">{mod}</span>
+                    {seleccionado ? <CheckSquare className="w-4 h-4 text-cyan-400" /> : <Square className="w-4 h-4 text-slate-500" />}
+                  </label>
+                );
+              })}
             </div>
 
             <div className="flex justify-end">
@@ -2232,6 +2186,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL LOGIN */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
@@ -2253,7 +2208,6 @@ export default function App() {
                 <input
                   type="email"
                   required
-                  autoComplete="off"
                   value={emailInput}
                   onChange={(e) => { setEmailInput(e.target.value); setErrorPin(false); }}
                   placeholder="usuario@hospital.gob.pe"
@@ -2271,7 +2225,6 @@ export default function App() {
                 <input
                   type="password"
                   required
-                  autoComplete="off"
                   value={passwordInput}
                   onChange={(e) => { setPasswordInput(e.target.value); setErrorPin(false); }}
                   placeholder="••••••••"
@@ -2284,7 +2237,7 @@ export default function App() {
               </div>
 
               {errorPin && (
-                <p className="text-red-400 text-xs text-center font-semibold">Credenciales no válidas o no registradas.</p>
+                <p className="text-red-400 text-xs text-center font-semibold">Credenciales no válidas.</p>
               )}
 
               <div className="flex justify-end gap-2 pt-2">
@@ -2307,6 +2260,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL COMUNICADO */}
       {mostrarModalComunicado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -2315,7 +2269,7 @@ export default function App() {
             <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
               <h3 className="text-lg font-bold flex items-center gap-2">
                 <Megaphone className="w-5 h-5 text-cyan-500" />
-                Editar Comunicado Informativo
+                Editar Comunicado
               </h3>
               <button onClick={() => setMostrarModalComunicado(false)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -2324,7 +2278,6 @@ export default function App() {
 
             <form onSubmit={guardarComunicado} autoComplete="off" className="space-y-4">
               <div>
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Mensaje a mostrar en la marquesina:</label>
                 <textarea
                   rows={4}
                   value={nuevoComunicado}
@@ -2356,6 +2309,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL REEMPLAZO */}
       {medicoParaReemplazo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2376,12 +2330,8 @@ export default function App() {
                 <p className="text-xs text-slate-400 mb-2">
                   Médico Titular: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaReemplazo.Medico}</strong>
                 </p>
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nombre del Médico Reemplazante:</label>
                 <input
                   type="text"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck="false"
                   value={nombreReemplazo}
                   onChange={(e) => setNombreReemplazo(e.target.value)}
                   placeholder="Ej. Dr. Juan Pérez"
@@ -2412,7 +2362,8 @@ export default function App() {
           </div>
         </div>
       )}
-      
+
+      {/* MODAL REPORTE DE EXCEL */}
       {mostrarModalReporte && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-2xl rounded-3xl p-6 shadow-2xl border ${
@@ -2427,10 +2378,6 @@ export default function App() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-
-            <p className="text-xs text-slate-400 mb-4">
-              Se detectaron <strong className="text-amber-500">{duplicadosOmitidos.length} registro(s) duplicado(s)</strong> en el archivo Excel o ya existentes en el sistema. Estos registros no se volvieron a cargar:
-            </p>
 
             <div className="max-h-64 overflow-y-auto space-y-2 pr-1 mb-6">
               <table className="w-full text-left text-xs border-collapse">
@@ -2469,6 +2416,7 @@ export default function App() {
         </div>
       )} 
 
+      {/* MODAL LLAMAR PACIENTE NUEVO */}
       {medicoParaLlamar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
