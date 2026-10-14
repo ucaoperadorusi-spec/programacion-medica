@@ -14,7 +14,7 @@ import {
   CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
-  Timer, History, UserMinus, AlertCircle
+  Timer, History, UserMinus, AlertCircle, UserMatch, Check
 } from 'lucide-react';
 
 export default function App() {
@@ -243,7 +243,7 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  // Guardar Entrada en la Colección Historial de Firestore
+  // 1. Guardar Entrada en la Colección 1: "historial_llamados" (Auditoría Global)
   const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio) => {
     try {
       await addDoc(collection(db, "historial_llamados"), {
@@ -260,15 +260,34 @@ export default function App() {
     }
   };
 
+  // 2. Guardar Entrada en la Colección 2: "pacientes_medico" (Historial Individual del Médico)
+  const registrarEnPacientesMedico = async (medico, paciente, estadoFinal) => {
+    try {
+      await addDoc(collection(db, "pacientes_medico"), {
+        medico: medico || "Desconocido",
+        paciente: paciente || "Desconocido",
+        tipoRegistro: estadoFinal, // 'NO_RESPONDIO' o 'ATENDIDO'
+        fechaFormateada: obtenerFechaHoyLocal(),
+        horaFormateada: new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+        fechaIso: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error guardando en pacientes_medico:", err);
+    }
+  };
+
   // Marcar Paciente que No Respondió al Llamado
   const marcarPacienteNoRespondio = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
     try {
-      // 1. Guardar constancia en la colección de auditoría
-      await registrarEnHistorialFirestore(medObj.Medico, medObj.pacienteLlamado, 'NO_RESPONDIO', servicioActivo);
+      const pacienteNombre = medObj.pacienteLlamado;
 
-      // 2. Limpiar la llamada en el estado del médico
+      // Guardar en ambas colecciones
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'NO_RESPONDIO', servicioActivo);
+      await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'NO_RESPONDIO');
+
+      // Limpiar llamada activa en el registro del médico
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
       const ahoraIso = new Date().toISOString();
@@ -288,7 +307,38 @@ export default function App() {
     }
   };
 
-  // Volver a llamar al paciente (re-llamado directo)
+  // Marcar Paciente Atendido Exitosamente
+  const marcarPacienteAtendido = async (medObj) => {
+    if (!medObj || !medObj.pacienteLlamado) return;
+
+    try {
+      const pacienteNombre = medObj.pacienteLlamado;
+
+      // Guardar en ambas colecciones
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'ATENDIDO', servicioActivo);
+      await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'ATENDIDO');
+
+      // Cambiar a En Consulta
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      const ahoraIso = new Date().toISOString();
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          estado: "CONSULTA",
+          pacienteLlamado: null,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+
+      await batch.commit();
+    } catch (err) {
+      console.error("Error al registrar paciente atendido:", err);
+    }
+  };
+
+  // Volver a llamar al paciente
   const volverALlamarPaciente = async (medObj, nombreDirecto = null) => {
     const pacienteAVisar = nombreDirecto || medObj?.pacienteLlamado;
     if (!medObj || !pacienteAVisar) return;
@@ -309,19 +359,17 @@ export default function App() {
 
       await batch.commit();
 
-      // Registro en auditoría del re-llamado
       await registrarEnHistorialFirestore(medObj.Medico, pacienteAVisar, 'RE_LLAMADO', servicioActivo);
     } catch (err) {
       console.error("Error al volver a llamar al paciente:", err);
     }
   };
 
-  // Cargar Historial en Tiempo Real desde Firestore
+  // Cargar Historial Global en Tiempo Real
   useEffect(() => {
     const q = collection(db, "historial_llamados");
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Ordenar por hora más reciente
       datos.sort((a, b) => new Date(b.fechaIso).getTime() - new Date(a.fechaIso).getTime());
       setHistorialLlamados(datos);
     });
@@ -497,7 +545,6 @@ export default function App() {
 
       await batch.commit();
 
-      // Registro en auditoría del primer llamado
       await registrarEnHistorialFirestore(medicoParaLlamar.Medico, nombreLimpio, 'LLAMADO', servicioActivo);
 
       setMedicoParaLlamar(null);
@@ -728,7 +775,6 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
-  // Inicio de sesión
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
@@ -1393,7 +1439,7 @@ export default function App() {
                       const IconoEstado = configEstado.icon;
                       const tiempoTranscurrido = obtenerTiempoTranscurrido(med.estadoUltimoCambio);
 
-                      // Inasistentes específicos del día para este médico
+                      // Inasistentes específicos de hoy para este médico
                       const inasistentesMed = historialLlamados.filter(
                         h => h.medico === med.Medico && h.estado === 'NO_RESPONDIO' && h.fechaFormateada === obtenerFechaHoyLocal()
                       );
@@ -1416,7 +1462,7 @@ export default function App() {
                                   </p>
                                 )}
 
-                                {/* Aviso de Paciente Llamado con Botón Re-llamar y Marcar No Respondió */}
+                                {/* Aviso de Paciente Llamado con Botones de Acción */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
                                   <div className={`mt-3 p-3 rounded-2xl border-2 flex flex-col gap-2.5 shadow-lg ${
                                     temaClaro 
@@ -1437,11 +1483,11 @@ export default function App() {
 
                                     {/* Botones de acción del llamado */}
                                     {puedeModificarEstados && (
-                                      <div className="flex items-center gap-2 pt-1">
+                                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
                                         <button
                                           type="button"
                                           onClick={() => volverALlamarPaciente(med)}
-                                          className="flex-1 px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          className="flex-1 px-2 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
                                           title="Volver a hacer sonar la llamada en la pantalla TV"
                                         >
                                           <RefreshCw className="w-3.5 h-3.5" />
@@ -1450,8 +1496,18 @@ export default function App() {
 
                                         <button
                                           type="button"
+                                          onClick={() => marcarPacienteAtendido(med)}
+                                          className="px-2 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          title="Marcar paciente como ATENDIDO"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                          <span>Atendido</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
                                           onClick={() => marcarPacienteNoRespondio(med)}
-                                          className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
+                                          className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
                                           title="Registrar que el paciente no acudió al llamado"
                                         >
                                           <UserMinus className="w-3.5 h-3.5" />
@@ -1467,7 +1523,7 @@ export default function App() {
                                   <div className="mt-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1.5">
                                     <p className="text-[10px] font-black uppercase text-amber-500 flex items-center gap-1">
                                       <AlertCircle className="w-3 h-3" />
-                                      Inasistentes Registrados Hoy ({inasistentesMed.length}):
+                                      No Respondieron Hoy ({inasistentesMed.length}):
                                     </p>
                                     <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
                                       {inasistentesMed.map((ina, idxIna) => (
@@ -1479,9 +1535,10 @@ export default function App() {
                                           {puedeModificarEstados && (
                                             <button
                                               onClick={() => volverALlamarPaciente(med, ina.paciente)}
-                                              className="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold text-[10px] shrink-0"
+                                              className="px-2 py-0.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold text-[10px] shrink-0 flex items-center gap-1"
                                               title="Volver a llamar a este paciente"
                                             >
+                                              <RefreshCw className="w-2.5 h-2.5" />
                                               Llamar
                                             </button>
                                           )}
@@ -1753,6 +1810,11 @@ export default function App() {
                               NO RESPONDIO
                             </span>
                           )}
+                          {h.estado === 'ATENDIDO' && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              ATENDIDO
+                            </span>
+                          )}
                           {h.estado === 'LLAMADO' && (
                             <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
                               PRIMER LLAMADO
@@ -1783,7 +1845,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Resto de modales (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
+      {/* Resto de Modales (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
