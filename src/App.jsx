@@ -36,42 +36,66 @@ export default function App() {
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
-  // Configuración de estados del médico
+  // Configuración de estados del médico mejorada (Alto contraste y colores vibrantes)
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
-      badge: temaClaro ? "bg-emerald-100 text-emerald-800 border-emerald-400" : "bg-emerald-500/20 text-emerald-400 border-emerald-500/50", 
-      cardColor: temaClaro ? "bg-emerald-50/70 border-emerald-400 shadow-emerald-500/10" : "bg-emerald-900/20 border-emerald-500/40 shadow-emerald-900/50",
+      badge: temaClaro 
+        ? "bg-emerald-600 text-white font-extrabold shadow-sm" 
+        : "bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20", 
+      cardColor: temaClaro 
+        ? "bg-white border-2 border-emerald-500 shadow-xl shadow-emerald-500/10 ring-1 ring-emerald-500/20" 
+        : "bg-slate-900/90 border-2 border-emerald-500/80 shadow-2xl shadow-emerald-950/80 ring-1 ring-emerald-500/30",
       icon: UserCheck 
     },
     PROGRAMADO: {
       label: "Próximo Turno",
-      badge: temaClaro ? "bg-blue-100 text-blue-800 border-blue-300" : "bg-blue-500/20 text-blue-300 border-blue-500/40",
-      cardColor: temaClaro ? "bg-blue-50/40 border-blue-200" : "bg-slate-900/40 border-slate-800",
+      badge: temaClaro 
+        ? "bg-blue-600 text-white font-extrabold shadow-sm" 
+        : "bg-blue-500 text-slate-950 font-black shadow-md shadow-blue-500/20",
+      cardColor: temaClaro 
+        ? "bg-white border-2 border-blue-400 shadow-md shadow-blue-500/5" 
+        : "bg-slate-900/90 border-2 border-slate-700/80 shadow-xl shadow-slate-950",
       icon: CalendarClock
     },
     PAUSA: { 
       label: "En Pausa", 
-      badge: temaClaro ? "bg-amber-100 text-amber-800 border-amber-400" : "bg-amber-500/20 text-amber-400 border-amber-500/50", 
-      cardColor: temaClaro ? "bg-amber-50/70 border-amber-400 shadow-amber-500/10" : "bg-amber-900/20 border-amber-500/40 shadow-amber-900/50",
+      badge: temaClaro 
+        ? "bg-amber-500 text-white font-extrabold shadow-sm" 
+        : "bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-500/20", 
+      cardColor: temaClaro 
+        ? "bg-white border-2 border-amber-400 shadow-xl shadow-amber-500/10" 
+        : "bg-slate-900/90 border-2 border-amber-500/80 shadow-2xl shadow-amber-950/80 ring-1 ring-amber-500/30",
       icon: Coffee 
     },
     AUSENTE: { 
       label: "Ausente", 
-      badge: temaClaro ? "bg-rose-100 text-rose-800 border-rose-400" : "bg-rose-500/20 text-rose-400 border-rose-500/50", 
-      cardColor: temaClaro ? "bg-rose-50/70 border-rose-400 shadow-rose-500/10" : "bg-rose-900/20 border-rose-500/40 shadow-rose-900/50",
+      badge: temaClaro 
+        ? "bg-rose-600 text-white font-extrabold shadow-sm" 
+        : "bg-rose-500 text-white font-black shadow-md shadow-rose-500/20", 
+      cardColor: temaClaro 
+        ? "bg-white border-2 border-rose-400 shadow-xl shadow-rose-500/10" 
+        : "bg-slate-900/90 border-2 border-rose-500/80 shadow-2xl shadow-rose-950/80 ring-1 ring-rose-500/30",
       icon: UserX 
     },
     LLAMANDO: { 
       label: "Llamando...", 
-      badge: temaClaro ? "bg-cyan-100 text-cyan-800 border-cyan-400 animate-pulse" : "bg-cyan-500/20 text-cyan-300 border-cyan-400 animate-pulse", 
-      cardColor: temaClaro ? "bg-cyan-50/80 border-cyan-400 shadow-cyan-500/20 ring-2 ring-cyan-400/50" : "bg-cyan-900/30 border-cyan-400 shadow-cyan-900/50 ring-1 ring-cyan-500/50",
+      badge: temaClaro 
+        ? "bg-cyan-600 text-white font-black shadow-md animate-pulse" 
+        : "bg-cyan-400 text-slate-950 font-black shadow-lg shadow-cyan-400/40 animate-pulse", 
+      cardColor: temaClaro 
+        ? "bg-cyan-50/90 border-2 border-cyan-500 shadow-2xl shadow-cyan-500/20 ring-2 ring-cyan-400/50" 
+        : "bg-cyan-950/40 border-2 border-cyan-400 shadow-2xl shadow-cyan-950/90 ring-2 ring-cyan-400/60 animate-pulse",
       icon: Bell 
     },
     CULMINADO: {
       label: "Turno Culminado",
-      badge: temaClaro ? "bg-slate-200 text-slate-600 border-slate-400" : "bg-slate-800 text-slate-400 border-slate-600",
-      cardColor: temaClaro ? "bg-slate-100/60 border-slate-300 opacity-60" : "bg-slate-900/40 border-slate-800/80 opacity-50",
+      badge: temaClaro 
+        ? "bg-slate-500 text-white font-bold" 
+        : "bg-slate-700 text-slate-300 font-bold",
+      cardColor: temaClaro 
+        ? "bg-slate-100/80 border-2 border-slate-300 opacity-60" 
+        : "bg-slate-900/40 border-2 border-slate-800 opacity-40",
       icon: CheckSquare
     }
   };
@@ -1185,24 +1209,38 @@ export default function App() {
                       const IconoEstado = configEstado.icon;
 
                       return (
-                        <div key={mIdx} className={`p-5 rounded-2xl border flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 ${configEstado.cardColor}`}>
+                        <div 
+                          key={mIdx} 
+                          className={`p-5 rounded-2xl border flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 ${configEstado.cardColor}`}
+                        >
                           <div>
+                            {/* Cabecera: Nombre y Botones de Edición / Eliminar */}
                             <div className="flex justify-between items-start mb-2">
                               <div>
                                 <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
                                   {med.Medico}
                                 </h3>
                                 {med.esReemplazo && med.medicoTitular && (
-                                  <p className="text-[11px] text-purple-500 italic font-medium">Reemplaza a: {med.medicoTitular}</p>
+                                  <p className="text-[11px] text-purple-500 italic font-medium">
+                                    Reemplaza a: {med.medicoTitular}
+                                  </p>
                                 )}
 
-                                {/* Aviso de Paciente Llamado solo en Servicio de Emergencia */}
+                                {/* Aviso de Paciente Llamado (Solo Emergencia - Alta Visibilidad) */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
-                                  <div className="mt-3 p-3 rounded-2xl bg-rose-500/20 border-2 border-rose-500 text-rose-300 animate-pulse flex items-center gap-2.5 shadow-lg shadow-rose-950/50">
-                                    <Bell className="w-5 h-5 text-rose-400 shrink-0 animate-bounce" />
+                                  <div className={`mt-3 p-3 rounded-2xl border-2 flex items-center gap-2.5 shadow-lg ${
+                                    temaClaro 
+                                      ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
+                                      : 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-rose-950/50'
+                                  } animate-pulse`}>
+                                    <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
                                     <div className="overflow-hidden">
-                                      <p className="text-[10px] uppercase font-bold tracking-wider text-rose-400">Llamando a / Atendiendo a:</p>
-                                      <p className="text-sm font-black text-white leading-tight truncate">{med.pacienteLlamado}</p>
+                                      <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
+                                        Atendiendo a / Llamando a:
+                                      </p>
+                                      <p className={`text-sm font-black leading-tight truncate ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
+                                        {med.pacienteLlamado}
+                                      </p>
                                     </div>
                                   </div>
                                 )}
@@ -1220,7 +1258,9 @@ export default function App() {
                                     <button
                                       onClick={() => abrirModalEditar(med)}
                                       className={`p-1.5 rounded-lg border transition ${
-                                        temaClaro ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
+                                        temaClaro 
+                                          ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' 
+                                          : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
                                       }`}
                                       title="Editar Campos del Registro"
                                     >
@@ -1239,25 +1279,29 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Área y Rol / Subactividad */}
+                            {/* Badges de Área y Rol */}
                             <div className="flex flex-wrap items-center gap-2 mb-3">
-                              <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                                temaClaro ? 'bg-slate-100 text-slate-700' : 'bg-slate-800 text-slate-300'
+                              <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                temaClaro 
+                                  ? 'bg-slate-200 text-slate-800 border border-slate-300' 
+                                  : 'bg-slate-800 text-slate-200 border border-slate-700'
                               }`}>
                                 {med.Area || "General"}
                               </span>
                               {med.Rol && (
-                                <span className={`px-2.5 py-1 rounded-lg text-xs ${
-                                  temaClaro ? 'bg-blue-50 text-blue-700 font-medium' : 'bg-blue-900/30 text-blue-300'
+                                <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                  temaClaro 
+                                    ? 'bg-blue-100 text-blue-900 border border-blue-200' 
+                                    : 'bg-blue-950/80 text-blue-300 border border-blue-800/80'
                                 }`}>
                                   {med.Rol}
                                 </span>
                               )}
                             </div>
 
-                            {/* Horarios de Atención */}
+                            {/* Horarios / Turnos con Alto Contraste */}
                             <div className="space-y-1 mb-4">
-                              <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-400' : 'text-slate-500'}`}>
+                              <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
                                 Horarios / Turnos:
                               </p>
                               <div className="flex flex-wrap gap-2 items-center">
@@ -1266,14 +1310,14 @@ export default function App() {
 
                                   if (estadoTurno === 'ACTIVO') {
                                     return (
-                                      <div key={hIdx} className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono text-xs font-bold ring-2 shadow-sm animate-pulse ${
+                                      <div key={hIdx} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-mono text-xs font-black shadow-md ${
                                         servicioActivo === 'EMERGENCIA'
-                                          ? 'bg-rose-500/20 text-rose-300 border-rose-400 ring-rose-400/40'
+                                          ? 'bg-rose-600 text-white shadow-rose-600/30'
                                           : temaClaro 
-                                            ? 'bg-cyan-100 text-cyan-800 border-cyan-400 ring-cyan-400/40' 
-                                            : 'bg-cyan-500/20 text-cyan-300 border-cyan-400 ring-cyan-400/40'
+                                            ? 'bg-cyan-600 text-white shadow-cyan-600/20' 
+                                            : 'bg-cyan-400 text-slate-950 shadow-cyan-400/30'
                                       }`}>
-                                        <span className={`w-2 h-2 rounded-full animate-ping ${servicioActivo === 'EMERGENCIA' ? 'bg-rose-400' : 'bg-cyan-400'}`} />
+                                        <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                                         <span>{h.inicio} - {h.fin}</span>
                                       </div>
                                     );
@@ -1281,13 +1325,13 @@ export default function App() {
 
                                   if (estadoTurno === 'FUTURO') {
                                     return (
-                                      <div key={hIdx} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-dashed font-mono text-xs font-medium transition ${
+                                      <div key={hIdx} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs font-bold transition ${
                                         temaClaro 
-                                          ? 'bg-blue-50/80 text-blue-700 border-blue-300' 
-                                          : 'bg-slate-800/60 text-blue-300 border-blue-500/40'
+                                          ? 'bg-blue-50 text-blue-900 border-blue-300' 
+                                          : 'bg-slate-800 text-blue-300 border-blue-500/40'
                                       }`}>
-                                        <span className={`text-[10px] uppercase font-sans font-bold px-1 rounded ${
-                                          temaClaro ? 'bg-blue-100 text-blue-800' : 'bg-blue-900/60 text-blue-300'
+                                        <span className={`text-[10px] uppercase font-sans font-extrabold px-1 rounded ${
+                                          temaClaro ? 'bg-blue-200 text-blue-900' : 'bg-blue-900/80 text-blue-200'
                                         }`}>
                                           Próximo
                                         </span>
@@ -1298,17 +1342,17 @@ export default function App() {
 
                                   if (estadoTurno === 'PASADO') {
                                     return (
-                                      <div key={hIdx} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs font-medium transition ${
+                                      <div key={hIdx} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border font-mono text-xs font-semibold transition ${
                                         temaClaro 
-                                          ? 'bg-slate-100 text-slate-500 border-slate-300 opacity-75' 
-                                          : 'bg-slate-800/40 text-slate-400 border-slate-700/60 opacity-60'
+                                          ? 'bg-slate-100 text-slate-600 border-slate-300' 
+                                          : 'bg-slate-800/60 text-slate-400 border-slate-700/60'
                                       }`}>
                                         <span className={`text-[10px] uppercase font-sans font-bold px-1 rounded ${
-                                          temaClaro ? 'bg-slate-200 text-slate-600' : 'bg-slate-700 text-slate-400'
+                                          temaClaro ? 'bg-slate-200 text-slate-700' : 'bg-slate-700 text-slate-300'
                                         }`}>
                                           Culminado
                                         </span>
-                                        <span className="line-through decoration-slate-400/50">{h.inicio} - {h.fin}</span>
+                                        <span className="line-through decoration-slate-400">{h.inicio} - {h.fin}</span>
                                       </div>
                                     );
                                   }
@@ -1320,7 +1364,7 @@ export default function App() {
                           </div>
 
                           {/* Control de Estados y Reemplazos */}
-                          <div className="pt-3 border-t border-slate-200/40 dark:border-slate-800/60 space-y-3">
+                          <div className={`pt-3 border-t space-y-3 ${temaClaro ? 'border-slate-200' : 'border-slate-800'}`}>
                             <div className="flex items-center justify-between">
                               <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
                                 <IconoEstado className="w-3.5 h-3.5" />
@@ -1353,7 +1397,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Botones de cambio manual de estado */}
+                            {/* Botones de cambio manual de estado con relieve y contraste */}
                             {puedeModificarEstados && (
                               <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 pt-1">
                                 {Object.keys(ESTADOS_MEDICO).map((key) => {
@@ -1376,14 +1420,14 @@ export default function App() {
                                       disabled={esBloqueado}
                                       onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora, med)}
                                       title={tooltipBloqueo}
-                                      className={`py-1 text-[10px] font-bold rounded-lg border transition ${
+                                      className={`py-1.5 text-[10px] font-black tracking-wider rounded-lg border transition shadow-sm ${
                                         esBloqueado
-                                          ? 'bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed dark:bg-slate-800/40 dark:text-slate-600 dark:border-slate-800'
+                                          ? 'bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed dark:bg-slate-800/30 dark:text-slate-600 dark:border-slate-800'
                                           : activeState
-                                            ? 'bg-blue-600 text-white border-blue-600 shadow'
+                                            ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/30 ring-2 ring-blue-400/50'
                                             : temaClaro
-                                              ? 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                                              : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 text-slate-200'
+                                              ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
+                                              : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
                                       }`}
                                     >
                                       {key.slice(0, 4)}
