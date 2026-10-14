@@ -469,11 +469,10 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // AGRUPADOR INTELIGENTE DE AUDITORÍA (UNIFICA EVENTOS POR PACIENTE)
+  // AGRUPADOR INTELIGENTE DE AUDITORÍA
   const historialAgrupadoAuditoria = React.useMemo(() => {
     const mapaGrupos = new Map();
 
-    // Procesamos todos los registros ordenados cronológicamente
     const ordenados = [...historialLlamados].sort(
       (a, b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime()
     );
@@ -507,16 +506,14 @@ export default function App() {
       g.fechaIsoUltima = item.fechaIso;
     });
 
-    // Convertimos a arreglo y ordenamos por actividad más reciente primero
     const resultado = Array.from(mapaGrupos.values());
     resultado.sort((a, b) => new Date(b.fechaIsoUltima).getTime() - new Date(a.fechaIsoUltima).getTime());
 
     return resultado;
   }, [historialLlamados]);
 
-  // FILTRADO CON BUSCADOR Y PESTAÑAS DE ETAPAS EN EL MODAL DE AUDITORÍA
+  // FILTRADO DE AUDITORÍA
   const historialFiltradoAuditoria = historialAgrupadoAuditoria.filter(grupo => {
-    // Filtro por Buscador (Nombre de Paciente o Médico)
     const termino = busquedaAuditoria.trim().toLowerCase();
     const coincideTexto = !termino || 
       grupo.paciente.toLowerCase().includes(termino) || 
@@ -524,7 +521,6 @@ export default function App() {
 
     if (!coincideTexto) return false;
 
-    // Filtro por Etapas del Proceso
     if (filtroEtapaAuditoria !== 'TODOS') {
       if (filtroEtapaAuditoria === 'DADO_DE_BAJA' && grupo.estadoFinal !== 'DADO_DE_BAJA') return false;
       if (filtroEtapaAuditoria === 'ATENDIDO' && grupo.estadoFinal !== 'ATENDIDO') return false;
@@ -1239,6 +1235,24 @@ export default function App() {
     <div className={`min-h-screen flex flex-col font-sans overflow-hidden h-screen relative transition-colors duration-300 ${
       temaClaro ? 'bg-slate-100 text-slate-800' : 'bg-slate-950 text-white'
     }`}>
+
+      {/* ESTILOS CSS INYECTADOS PARA EL MOVIMIENTO CONTINUO DEL MARQUEE */}
+      <style>{`
+        @keyframes marqueeAnimation {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
+        .animacion-marquee {
+          display: inline-block;
+          white-space: nowrap;
+          padding-left: 100%;
+          animation: marqueeAnimation 22s linear infinite;
+          will-change: transform;
+        }
+        .animacion-marquee:hover {
+          animation-play-state: paused;
+        }
+      `}</style>
       
       {/* Header Superior */}
       <header className={`px-8 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl z-20 border-b transition-colors ${
@@ -1453,13 +1467,13 @@ export default function App() {
         </div>
       </header>
 
-      {/* Marquee Informativo */}
+      {/* Marquee Informativo Dinámico con Animación Fluida */}
       {comunicado && (
         <div className={`py-2 px-4 border-b flex items-center gap-3 overflow-hidden ${
           temaClaro ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-blue-950/40 border-blue-900/50 text-blue-300'
         }`}>
           <Megaphone className="w-4 h-4 shrink-0 text-cyan-500 animate-bounce relative z-10" />
-          <div className="overflow-hidden w-full whitespace-nowrap">
+          <div className="overflow-hidden w-full whitespace-nowrap relative flex items-center">
             <p className="animacion-marquee text-xs font-semibold tracking-wide uppercase">
               {comunicado}
             </p>
@@ -1543,7 +1557,6 @@ export default function App() {
                       const IconoEstado = configEstado.icon;
                       const tiempoTranscurrido = obtenerTiempoTranscurrido(med.horaIngresoConsulta || med.estadoUltimoCambio);
 
-                      // PACIENTES PENDIENTES DE RE-LLAMADO (FILTRADOS Y UNIFICADOS)
                       const inasistentesPendientes = obtenerInasistentesPendientes(med.Medico);
 
                       return (
@@ -1948,7 +1961,7 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL AUDITORÍA RE-DISEÑADO: CONSOLIDADO, BUSCADOR Y FILTROS */}
+      {/* MODAL AUDITORÍA RE-DISEÑADO */}
       {mostrarModalHistorial && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-4xl rounded-3xl p-6 shadow-2xl border flex flex-col max-h-[90vh] ${
@@ -1969,7 +1982,7 @@ export default function App() {
               </button>
             </div>
 
-            {/* BARRA DE HERRAMIENTAS: BUSCADOR + PESTAÑAS DE ETAPAS DE ATENCIÓN */}
+            {/* BARRA DE HERRAMIENTAS: BUSCADOR + PESTAÑAS DE ETAPAS */}
             <div className="space-y-3 mb-4 shrink-0">
               <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
                 
@@ -2021,7 +2034,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* TABLA DE AUDITORÍA CONSOLIDADA Y EXPANDIBLE */}
+            {/* TABLA DE AUDITORÍA CONSOLIDADA */}
             <div className="overflow-y-auto flex-1 pr-1 mb-4 space-y-2">
               {historialFiltradoAuditoria.length === 0 ? (
                 <div className="py-12 text-center text-slate-400 space-y-2">
@@ -2089,7 +2102,7 @@ export default function App() {
                               </span>
                             )}
 
-                            {/* Botón Desplegar Cronología de Intentos */}
+                            {/* Botón Desplegar Cronología */}
                             <button
                               onClick={() => setFilaExpandidaAuditoria(esExpandido ? null : item.idUnico)}
                               className="p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition"
@@ -2100,7 +2113,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* DESPLIEGUE DETALLADO DE TRAZABILIDAD Y CRONOLOGÍA DE INTENTOS */}
+                        {/* DESPLIEGUE DETALLADO DE EVENTOS */}
                         {esExpandido && (
                           <div className="mt-3 pt-3 border-t border-slate-800 bg-slate-950/60 rounded-xl p-3 space-y-2">
                             <p className="text-[10px] font-black text-purple-400 uppercase tracking-wider flex items-center gap-1">
@@ -2148,7 +2161,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALES ADICIONALES (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
+      {/* MODALES ADICIONALES */}
       {medicoParaEditarPaciente && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
