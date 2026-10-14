@@ -36,12 +36,12 @@ export default function App() {
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
-  // Configuración de estados del médico mejorada (Alto contraste y colores vibrantes)
+  // Configuración de estados del médico con matices de fondo para cada estado
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
       badge: temaClaro 
-        ? "bg-emerald-600 text-white font-extrabold shadow-sm" 
+        ? "bg-emerald-600 text-white font-black shadow-sm" 
         : "bg-emerald-500 text-slate-950 font-black shadow-md shadow-emerald-500/20", 
       cardColor: temaClaro 
         ? "bg-white border-2 border-emerald-500 shadow-xl shadow-emerald-500/10 ring-1 ring-emerald-500/20" 
@@ -51,7 +51,7 @@ export default function App() {
     PROGRAMADO: {
       label: "Próximo Turno",
       badge: temaClaro 
-        ? "bg-blue-600 text-white font-extrabold shadow-sm" 
+        ? "bg-blue-600 text-white font-black shadow-sm" 
         : "bg-blue-500 text-slate-950 font-black shadow-md shadow-blue-500/20",
       cardColor: temaClaro 
         ? "bg-white border-2 border-blue-400 shadow-md shadow-blue-500/5" 
@@ -61,7 +61,7 @@ export default function App() {
     PAUSA: { 
       label: "En Pausa", 
       badge: temaClaro 
-        ? "bg-amber-500 text-white font-extrabold shadow-sm" 
+        ? "bg-amber-500 text-white font-black shadow-sm" 
         : "bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-500/20", 
       cardColor: temaClaro 
         ? "bg-white border-2 border-amber-400 shadow-xl shadow-amber-500/10" 
@@ -71,7 +71,7 @@ export default function App() {
     AUSENTE: { 
       label: "Ausente", 
       badge: temaClaro 
-        ? "bg-rose-600 text-white font-extrabold shadow-sm" 
+        ? "bg-rose-600 text-white font-black shadow-sm" 
         : "bg-rose-500 text-white font-black shadow-md shadow-rose-500/20", 
       cardColor: temaClaro 
         ? "bg-white border-2 border-rose-400 shadow-xl shadow-rose-500/10" 
@@ -159,20 +159,18 @@ export default function App() {
     return palabrasClave.some(p => texto.includes(p));
   };
 
-  // Función para reproducir el nombre en voz alta (Text-to-Speech)
   const hablarNombrePaciente = (nombre, medico) => {
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Cancelar audios en cola
+      window.speechSynthesis.cancel();
       const texto = `Atención paciente ${nombre}, acercarse con el doctor ${medico}`;
       const utterance = new SpeechSynthesisUtterance(texto);
       utterance.lang = 'es-ES';
-      utterance.rate = 0.9;  // Velocidad pausada
-      utterance.pitch = 1.0; // Tono natural
+      utterance.rate = 0.9;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
   };
 
-  // Escuchar cuando entra un nuevo paciente en estado LLAMANDO y enunciarlo en la TV
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
 
@@ -189,13 +187,11 @@ export default function App() {
     }
   }, [programacion, servicioActivo]);
 
-  // Reloj
   useEffect(() => {
     const timer = setInterval(() => setHoraActual(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Firebase Auth
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user && user.email) {
@@ -212,7 +208,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Firebase Realtime
   useEffect(() => {
     const q = collection(db, "programacion_medica");
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -222,7 +217,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Módulos Disponibles
   const todosLosModulosDisponibles = Array.from(
     new Set(programacion.map(item => item.Modulo || "Módulo General"))
   ).sort();
@@ -233,7 +227,6 @@ export default function App() {
     }
   }, [programacion]);
 
-  // Firebase Comunicado
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, "configuracion"), (snapshot) => {
       snapshot.docs.forEach(d => {
@@ -245,7 +238,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Modo TV
   useEffect(() => {
     let scrollInterval = null;
     let timeoutAccion = null;
@@ -324,8 +316,6 @@ export default function App() {
     if (!medicoParaLlamar || !nombrePaciente.trim()) return;
 
     const nombreLimpio = nombrePaciente.trim().toUpperCase();
-
-    // 🔊 Reproducir locución inmediatamente en la computadora del operador
     hablarNombrePaciente(nombreLimpio, medicoParaLlamar.Medico);
 
     try {
@@ -1226,7 +1216,7 @@ export default function App() {
                                   </p>
                                 )}
 
-                                {/* Aviso de Paciente Llamado (Solo Emergencia - Alta Visibilidad) */}
+                                {/* Aviso de Paciente Llamado (Solo Emergencia) */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
                                   <div className={`mt-3 p-3 rounded-2xl border-2 flex items-center gap-2.5 shadow-lg ${
                                     temaClaro 
@@ -1299,7 +1289,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Horarios / Turnos con Alto Contraste */}
+                            {/* Horarios / Turnos */}
                             <div className="space-y-1 mb-4">
                               <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
                                 Horarios / Turnos:
@@ -1363,8 +1353,12 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Control de Estados y Reemplazos */}
-                          <div className={`pt-3 border-t space-y-3 ${temaClaro ? 'border-slate-200' : 'border-slate-800'}`}>
+                          {/* 🔴 NUEVO: PANEL DE ESTADO Y CONTROLES CON FONDO MARCADO Y ESTRUCTURA */}
+                          <div className={`mt-2 p-3 rounded-xl border space-y-3 ${
+                            temaClaro 
+                              ? 'bg-slate-100/90 border-slate-200/80 shadow-inner' 
+                              : 'bg-slate-950/60 border-slate-800/80 shadow-inner'
+                          }`}>
                             <div className="flex items-center justify-between">
                               <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
                                 <IconoEstado className="w-3.5 h-3.5" />
@@ -1376,7 +1370,7 @@ export default function App() {
                                   <button
                                     onClick={() => setMedicoParaReemplazo(med)}
                                     className={`p-1.5 rounded-lg border transition ${
-                                      temaClaro ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100' : 'bg-purple-900/30 text-purple-300 border-purple-700/50 hover:bg-purple-800/40'
+                                      temaClaro ? 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50' : 'bg-purple-900/40 text-purple-300 border-purple-700/50 hover:bg-purple-800/50'
                                     }`}
                                     title="Asignar Reemplazo"
                                   >
@@ -1386,7 +1380,7 @@ export default function App() {
                                     <button
                                       onClick={() => restaurarTitular(med)}
                                       className={`p-1.5 rounded-lg border transition ${
-                                        temaClaro ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-amber-900/30 text-amber-300 border-amber-700/50 hover:bg-amber-800/40'
+                                        temaClaro ? 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50' : 'bg-amber-900/40 text-amber-300 border-amber-700/50 hover:bg-amber-800/50'
                                       }`}
                                       title="Restaurar Titular"
                                     >
@@ -1397,7 +1391,7 @@ export default function App() {
                               )}
                             </div>
 
-                            {/* Botones de cambio manual de estado con relieve y contraste */}
+                            {/* Botonera de Estados */}
                             {puedeModificarEstados && (
                               <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 pt-1">
                                 {Object.keys(ESTADOS_MEDICO).map((key) => {
@@ -1422,11 +1416,11 @@ export default function App() {
                                       title={tooltipBloqueo}
                                       className={`py-1.5 text-[10px] font-black tracking-wider rounded-lg border transition shadow-sm ${
                                         esBloqueado
-                                          ? 'bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed dark:bg-slate-800/30 dark:text-slate-600 dark:border-slate-800'
+                                          ? 'bg-slate-200/50 text-slate-400 border-slate-300/50 opacity-40 cursor-not-allowed dark:bg-slate-800/20 dark:text-slate-600 dark:border-slate-800/50'
                                           : activeState
                                             ? 'bg-blue-600 text-white border-blue-500 shadow-md shadow-blue-500/30 ring-2 ring-blue-400/50'
                                             : temaClaro
-                                              ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100 hover:text-slate-900'
+                                              ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 hover:text-slate-900'
                                               : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white'
                                       }`}
                                     >
@@ -1447,7 +1441,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal: Editar Registro Médico (ADMIN) */}
+      {/* Modales mantenidos intactos */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1606,7 +1600,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal: Crear Nuevo Registro Manual (ADMIN) */}
       {mostrarModalNuevoRegistro && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1769,7 +1762,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal: Selección de Módulos */}
       {mostrarModalModulos && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1836,7 +1828,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal: Login de Autenticación con Firebase */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border ${
@@ -1912,7 +1903,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal: Editar Comunicado */}
       {mostrarModalComunicado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
@@ -1962,7 +1952,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal: Reemplazo de Emergencia */}
       {medicoParaReemplazo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2020,7 +2009,6 @@ export default function App() {
         </div>
       )}
       
-      {/* Modal: Reporte de Registros Duplicados Omitidos */}
       {mostrarModalReporte && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-2xl rounded-3xl p-6 shadow-2xl border ${
@@ -2077,7 +2065,6 @@ export default function App() {
         </div>
       )} 
 
-      {/* Modal: Ingresar Nombre del Paciente a Llamar (Solo Emergencia) */}
       {medicoParaLlamar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
