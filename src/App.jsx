@@ -5,7 +5,7 @@ import {
   signOut, 
   onAuthStateChanged,
   setPersistence,
-  inMemoryPersistence // 🔒 Para cerrar sesión al refrescar con F5
+  inMemoryPersistence 
 } from 'firebase/auth';
 import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
@@ -169,8 +169,10 @@ export default function App() {
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
 
-  // Referencia para evitar repetir el audio infinitamente en la TV
-  const ultimoLlamadoRef = useRef(null);
+  // Sistema de Cola de Llamados e Historia de Procesados
+  const colaLlamadosRef = useRef([]);
+  const reproduciendoAudioRef = useRef(false);
+  const llamadosProcesadosRef = useRef(new Set());
 
   const obtenerFechaHoyLocal = () => {
     const d = new Date();
@@ -201,23 +203,45 @@ export default function App() {
     return palabrasClave.some(p => texto.includes(p));
   };
 
-  const hablarNombrePaciente = (nombre, medico) => {
+  // Procesador Secuencial de la Cola de Llamados
+  const procesarSiguienteLlamado = () => {
+    if (reproduciendoAudioRef.current || colaLlamadosRef.current.length === 0) return;
+
+    const siguiente = colaLlamadosRef.current.shift();
+    if (!siguiente) return;
+
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const texto = `Atención paciente ${nombre}, acercarse con el doctor ${medico}`;
+      reproduciendoAudioRef.current = true;
+      const texto = `Atención paciente ${siguiente.nombre}, acercarse con el doctor ${siguiente.medico}`;
       const utterance = new SpeechSynthesisUtterance(texto);
       utterance.lang = 'es-ES';
       utterance.rate = 0.9;
       utterance.pitch = 1.0;
+
+      utterance.onend = () => {
+        setTimeout(() => {
+          reproduciendoAudioRef.current = false;
+          procesarSiguienteLlamado();
+        }, 1000); // 1 segundo de pausa entre llamadas
+      };
+
+      utterance.onerror = () => {
+        reproduciendoAudioRef.current = false;
+        procesarSiguienteLlamado();
+      };
+
       window.speechSynthesis.speak(utterance);
     }
   };
 
-  // Volver a llamar al paciente (actualiza Firestore y activa síntesis de voz)
+  const agregarAColaDeLlamados = (nombre, medico) => {
+    colaLlamadosRef.current.push({ nombre, medico });
+    procesarSiguienteLlamado();
+  };
+
+  // Volver a llamar al paciente
   const volverALlamarPaciente = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
-
-    hablarNombrePaciente(medObj.pacienteLlamado, medObj.Medico);
 
     try {
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
@@ -237,26 +261,24 @@ export default function App() {
     }
   };
 
-  // Control de audio de llamados (Solo reproduce si ocurrió hace menos de 15s)
+  // Detección en tiempo real de llamadas para colocarlas en la cola
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
 
-    const medLlamando = programacion.find(
-      p => p.TipoServicio === 'EMERGENCIA' && p.estado === 'LLAMANDO' && p.pacienteLlamado
-    );
+    programacion.forEach(p => {
+      if (p.TipoServicio === 'EMERGENCIA' && p.estado === 'LLAMANDO' && p.pacienteLlamado && p.estadoUltimoCambio) {
+        const claveUnicaLlamado = `${p.id}_${p.pacienteLlamado}_${p.estadoUltimoCambio}`;
+        const tiempoCambio = new Date(p.estadoUltimoCambio).getTime();
+        const segundosDesdeLlamado = (new Date().getTime() - tiempoCambio) / 1000;
 
-    if (medLlamando) {
-      const claveLlamado = `${medLlamando.id}_${medLlamando.pacienteLlamado}`;
-      const tiempoCambio = medLlamando.estadoUltimoCambio ? new Date(medLlamando.estadoUltimoCambio).getTime() : 0;
-      const segundosDesdeLlamado = (new Date().getTime() - tiempoCambio) / 1000;
-
-      if (ultimoLlamadoRef.current !== claveLlamado) {
-        ultimoLlamadoRef.current = claveLlamado;
-        if (segundosDesdeLlamado < 15) {
-          hablarNombrePaciente(medLlamando.pacienteLlamado, medLlamando.Medico);
+        if (!llamadosProcesadosRef.current.has(claveUnicaLlamado)) {
+          llamadosProcesadosRef.current.add(claveUnicaLlamado);
+          if (segundosDesdeLlamado < 15) {
+            agregarAColaDeLlamados(p.pacienteLlamado, p.Medico);
+          }
         }
       }
-    }
+    });
   }, [programacion, servicioActivo]);
 
   useEffect(() => {
@@ -391,7 +413,6 @@ export default function App() {
     if (!medicoParaLlamar || !nombrePaciente.trim()) return;
 
     const nombreLimpio = nombrePaciente.trim().toUpperCase();
-    hablarNombrePaciente(nombreLimpio, medicoParaLlamar.Medico);
 
     try {
       const ids = Array.isArray(medicoParaLlamar.ids) ? medicoParaLlamar.ids : [medicoParaLlamar.id];
@@ -636,7 +657,7 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
-  // Inicio de sesión con inMemoryPersistence (cierra sesión al dar F5)
+  // Inicio de sesión con inMemoryPersistence
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
