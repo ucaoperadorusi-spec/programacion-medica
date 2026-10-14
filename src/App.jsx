@@ -14,7 +14,7 @@ import {
   CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
-  Timer, History, UserMinus, AlertCircle, Check, LogIn, UserX as UserDismiss
+  Timer, History, UserMinus, AlertCircle, Check, LogIn, Search, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 export default function App() {
@@ -41,6 +41,11 @@ export default function App() {
   const [historialLlamados, setHistorialLlamados] = useState([]);
   const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
 
+  // Filtros del Modal de Auditoría
+  const [busquedaAuditoria, setBusquedaAuditoria] = useState('');
+  const [filtroEtapaAuditoria, setFiltroEtapaAuditoria] = useState('TODOS');
+  const [filaExpandidaAuditoria, setFilaExpandidaAuditoria] = useState(null);
+
   // Selección de servicio activo
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
 
@@ -51,7 +56,7 @@ export default function App() {
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
-  // Configuración de estados
+  // Configuración de estados del médico
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
@@ -195,7 +200,7 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  // AUDITORÍA FIRESTORE CON REGISTRO COMPLETO
+  // REGISTRO AUDITORÍA EN FIRESTORE
   const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio, horaIngresoIso = null) => {
     try {
       await addDoc(collection(db, "historial_llamados"), {
@@ -227,14 +232,13 @@ export default function App() {
     }
   };
 
-  // CÁLCULO INTELIGENTE DE PACIENTES INASISTENTES PENDIENTES DEL DÍA
+  // CÁLCULO DE PACIENTES INASISTENTES PENDIENTES DEL DÍA
   const obtenerInasistentesPendientes = (nombreMedico) => {
     const hoy = obtenerFechaHoyLocal();
     const historialMedicoHoy = historialLlamados.filter(
       h => h.medico === nombreMedico && h.fechaFormateada === hoy
     );
 
-    // Ordenar cronológicamente ascendente (de más antiguo a más reciente)
     const cronologico = [...historialMedicoHoy].sort(
       (a, b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime()
     );
@@ -263,7 +267,6 @@ export default function App() {
       }
     });
 
-    // Filtro estricto: solo quedan en la lista si su ÚLTIMO estado del día es NO_RESPONDIO
     const pendientes = [];
     mapaPacientes.forEach(info => {
       if (info.ultimoEstado === 'NO_RESPONDIO') {
@@ -274,10 +277,10 @@ export default function App() {
     return pendientes;
   };
 
-  // DAR DE BAJA AL PACIENTE TRAS VARIOS INTENTOS (GUARDANDO EN AUDITORÍA Y LIBERANDO TARJETA)
+  // DAR DE BAJA
   const darDeBajaPaciente = async (medObj, pacienteNombre) => {
     if (!medObj || !pacienteNombre) return;
-    if (!window.confirm(`¿Seguro que desea DAR DE BAJA al paciente ${pacienteNombre}? Se guardará en la auditoría del día.`)) return;
+    if (!window.confirm(`¿Seguro que desea DAR DE BAJA al paciente ${pacienteNombre}? Se guardará en la auditoría.`)) return;
 
     try {
       const ahoraIso = new Date().toISOString();
@@ -285,7 +288,6 @@ export default function App() {
       await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'DADO_DE_BAJA', servicioActivo, ahoraIso);
       await registrarEnPacientesMedico(medObj.Medico, pacienteNombre, 'DADO_DE_BAJA');
 
-      // Si el paciente estaba actualmente seleccionado en la tarjeta del médico, se limpia
       if (medObj.pacienteLlamado === pacienteNombre) {
         const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
         const batch = writeBatch(db);
@@ -307,7 +309,7 @@ export default function App() {
     }
   };
 
-  // PASO 1 -> PASO 2: INGRESÓ A CONSULTA
+  // INGRESAR A CONSULTA
   const ingresarAConsultaConPaciente = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
@@ -336,7 +338,7 @@ export default function App() {
     }
   };
 
-  // PASO 2 -> PASO 3: FINALIZAR ATENCIÓN (ATENDIDO)
+  // FINALIZAR ATENCIÓN (ATENDIDO)
   const marcarPacienteAtendido = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
@@ -366,7 +368,7 @@ export default function App() {
     }
   };
 
-  // MARCAR "NO RESPONDIO"
+  // MARCAR NO RESPONDIO
   const marcarPacienteNoRespondio = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
@@ -466,6 +468,73 @@ export default function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // AGRUPADOR INTELIGENTE DE AUDITORÍA (UNIFICA EVENTOS POR PACIENTE)
+  const historialAgrupadoAuditoria = React.useMemo(() => {
+    const mapaGrupos = new Map();
+
+    // Procesamos todos los registros ordenados cronológicamente
+    const ordenados = [...historialLlamados].sort(
+      (a, b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime()
+    );
+
+    ordenados.forEach(item => {
+      const pac = (item.paciente || "DESCONOCIDO").trim().toUpperCase();
+      const med = (item.medico || "DESCONOCIDO").trim();
+      const fec = item.fechaFormateada || "";
+
+      const claveGrupo = `${fec}_${med}_${pac}`;
+
+      if (!mapaGrupos.has(claveGrupo)) {
+        mapaGrupos.set(claveGrupo, {
+          idUnico: claveGrupo,
+          fechaFormateada: fec,
+          paciente: pac,
+          medico: med,
+          servicio: item.servicio,
+          eventos: [],
+          estadoFinal: item.estado,
+          horaInicio: item.horaFormateada,
+          horaFin: item.horaFormateada,
+          fechaIsoUltima: item.fechaIso
+        });
+      }
+
+      const g = mapaGrupos.get(claveGrupo);
+      g.eventos.push(item);
+      g.estadoFinal = item.estado;
+      g.horaFin = item.horaFormateada;
+      g.fechaIsoUltima = item.fechaIso;
+    });
+
+    // Convertimos a arreglo y ordenamos por actividad más reciente primero
+    const resultado = Array.from(mapaGrupos.values());
+    resultado.sort((a, b) => new Date(b.fechaIsoUltima).getTime() - new Date(a.fechaIsoUltima).getTime());
+
+    return resultado;
+  }, [historialLlamados]);
+
+  // FILTRADO CON BUSCADOR Y PESTAÑAS DE ETAPAS EN EL MODAL DE AUDITORÍA
+  const historialFiltradoAuditoria = historialAgrupadoAuditoria.filter(grupo => {
+    // Filtro por Buscador (Nombre de Paciente o Médico)
+    const termino = busquedaAuditoria.trim().toLowerCase();
+    const coincideTexto = !termino || 
+      grupo.paciente.toLowerCase().includes(termino) || 
+      grupo.medico.toLowerCase().includes(termino);
+
+    if (!coincideTexto) return false;
+
+    // Filtro por Etapas del Proceso
+    if (filtroEtapaAuditoria !== 'TODOS') {
+      if (filtroEtapaAuditoria === 'DADO_DE_BAJA' && grupo.estadoFinal !== 'DADO_DE_BAJA') return false;
+      if (filtroEtapaAuditoria === 'ATENDIDO' && grupo.estadoFinal !== 'ATENDIDO') return false;
+      if (filtroEtapaAuditoria === 'EN_CONSULTA' && grupo.estadoFinal !== 'EN_CONSULTA') return false;
+      if (filtroEtapaAuditoria === 'NO_RESPONDIO' && grupo.estadoFinal !== 'NO_RESPONDIO') return false;
+      if (filtroEtapaAuditoria === 'LLAMADO' && (grupo.estadoFinal !== 'LLAMADO' && grupo.estadoFinal !== 'RE_LLAMADO')) return false;
+    }
+
+    return true;
+  });
 
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
@@ -1621,7 +1690,7 @@ export default function App() {
                                   </div>
                                 )}
 
-                                {/* LISTA DINÁMICA DE PACIENTES QUE NO RESPONDIERON (FILTRADA Y SIN DUPLICADOS) */}
+                                {/* LISTA DE PACIENTES INASISTENTES PENDIENTES */}
                                 {puedeModificarEstados && !modoTvActivo && inasistentesPendientes.length > 0 && (
                                   <div className="mt-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1.5">
                                     <p className="text-[10px] font-black uppercase text-amber-500 flex items-center gap-1">
@@ -1656,14 +1725,14 @@ export default function App() {
                                                 Llamar
                                               </button>
 
-                                              {/* BOTÓN DAR DE BAJA (DESPUÉS DE 3 INTENTOS FALLIDOS) */}
+                                              {/* BOTÓN DAR DE BAJA DESPUÉS DE 3 INTENTOS */}
                                               {superoLimiteIntentos && (
                                                 <button
                                                   onClick={() => darDeBajaPaciente(med, ina.paciente)}
                                                   className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition"
                                                   title="Dar de baja por inasistencia e inactivar"
                                                 >
-                                                  <UserDismiss className="w-2.5 h-2.5" />
+                                                  <UserX className="w-2.5 h-2.5" />
                                                   Dar de Baja
                                                 </button>
                                               )}
@@ -1879,7 +1948,207 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL PARA EDITAR NOMBRE DEL PACIENTE */}
+      {/* MODAL AUDITORÍA RE-DISEÑADO: CONSOLIDADO, BUSCADOR Y FILTROS */}
+      {mostrarModalHistorial && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-4xl rounded-3xl p-6 shadow-2xl border flex flex-col max-h-[90vh] ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            
+            {/* Cabecera del Modal */}
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4 shrink-0">
+              <div className="flex items-center space-x-2">
+                <History className="w-6 h-6 text-purple-400" />
+                <div>
+                  <h3 className="text-lg font-black tracking-wide">Auditoría y Tiempos de Atenciones</h3>
+                  <p className="text-xs text-slate-400">Consolidado inteligente de llamados, inasistencias y finalización</p>
+                </div>
+              </div>
+              <button onClick={() => setMostrarModalHistorial(false)} className="text-slate-400 hover:text-slate-200 p-1 rounded-xl">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* BARRA DE HERRAMIENTAS: BUSCADOR + PESTAÑAS DE ETAPAS DE ATENCIÓN */}
+            <div className="space-y-3 mb-4 shrink-0">
+              <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+                
+                {/* Buscador de Paciente / Médico */}
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input
+                    type="text"
+                    value={busquedaAuditoria}
+                    onChange={(e) => setBusquedaAuditoria(e.target.value)}
+                    placeholder="Buscar por paciente o médico..."
+                    className={`w-full pl-9 pr-4 py-2 rounded-xl border text-xs focus:outline-none transition ${
+                      temaClaro 
+                        ? 'bg-slate-50 border-slate-300 text-slate-800 focus:border-purple-500' 
+                        : 'bg-slate-800/80 border-slate-700 text-white focus:border-purple-400'
+                    }`}
+                  />
+                  {busquedaAuditoria && (
+                    <button onClick={() => setBusquedaAuditoria('')} className="absolute right-3 top-2.5 text-slate-400 hover:text-white text-xs">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Filtro rápido por Etapas del Proceso */}
+                <div className="flex flex-wrap gap-1 w-full md:w-auto">
+                  {[
+                    { id: 'TODOS', label: 'Todos' },
+                    { id: 'ATENDIDO', label: 'Atendidos' },
+                    { id: 'EN_CONSULTA', label: 'En Consulta' },
+                    { id: 'NO_RESPONDIO', label: 'Inasistentes' },
+                    { id: 'DADO_DE_BAJA', label: 'Dados de Baja' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setFiltroEtapaAuditoria(tab.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                        filtroEtapaAuditoria === tab.id
+                          ? 'bg-purple-600 text-white border-purple-500 shadow-md'
+                          : temaClaro
+                            ? 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
+                            : 'bg-slate-800 text-slate-400 border-slate-700 hover:bg-slate-700 hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* TABLA DE AUDITORÍA CONSOLIDADA Y EXPANDIBLE */}
+            <div className="overflow-y-auto flex-1 pr-1 mb-4 space-y-2">
+              {historialFiltradoAuditoria.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 space-y-2">
+                  <AlertCircle className="w-8 h-8 mx-auto text-slate-500" />
+                  <p className="text-sm font-medium">No se encontraron registros que coincidan con la búsqueda.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {historialFiltradoAuditoria.map((item, idx) => {
+                    const esExpandido = filaExpandidaAuditoria === item.idUnico;
+
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`border rounded-2xl p-3 transition ${
+                          item.estadoFinal === 'DADO_DE_BAJA' 
+                            ? 'border-rose-500/30 bg-rose-500/5' 
+                            : item.estadoFinal === 'ATENDIDO'
+                              ? 'border-emerald-500/30 bg-emerald-500/5'
+                              : temaClaro ? 'border-slate-200 bg-slate-50' : 'border-slate-800 bg-slate-800/40'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          
+                          {/* Rango de Horas */}
+                          <div className="w-36">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase">Rango / Horas:</p>
+                            <p className="font-mono text-xs font-bold text-slate-300">
+                              {item.horaInicio} {item.horaInicio !== item.horaFin && `→ ${item.horaFin}`}
+                            </p>
+                            <p className="text-[9px] text-slate-500 font-mono">{item.fechaFormateada}</p>
+                          </div>
+
+                          {/* Paciente y Médico */}
+                          <div className="flex-1 min-w-[200px]">
+                            <p className="text-sm font-black text-cyan-400 uppercase tracking-wide">{item.paciente}</p>
+                            <p className="text-xs text-slate-300 font-medium">Médico: {item.medico}</p>
+                          </div>
+
+                          {/* Etapa Final / Badge */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {item.estadoFinal === 'ATENDIDO' && (
+                              <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 flex items-center gap-1">
+                                <Check className="w-3.5 h-3.5" /> ATENCIÓN FINALIZADA
+                              </span>
+                            )}
+                            {item.estadoFinal === 'EN_CONSULTA' && (
+                              <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                                <LogIn className="w-3.5 h-3.5" /> EN CONSULTA
+                              </span>
+                            )}
+                            {item.estadoFinal === 'NO_RESPONDIO' && (
+                              <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-amber-500/20 text-amber-400 border border-amber-500/40 flex items-center gap-1">
+                                <UserMinus className="w-3.5 h-3.5" /> NO RESPONDIO
+                              </span>
+                            )}
+                            {item.estadoFinal === 'DADO_DE_BAJA' && (
+                              <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40 flex items-center gap-1 animate-pulse">
+                                <UserX className="w-3.5 h-3.5" /> DADO DE BAJA
+                              </span>
+                            )}
+                            {(item.estadoFinal === 'LLAMADO' || item.estadoFinal === 'RE_LLAMADO') && (
+                              <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-blue-500/20 text-blue-400 border border-blue-500/40 flex items-center gap-1">
+                                <Bell className="w-3.5 h-3.5" /> VOCEO / LLAMADO
+                              </span>
+                            )}
+
+                            {/* Botón Desplegar Cronología de Intentos */}
+                            <button
+                              onClick={() => setFilaExpandidaAuditoria(esExpandido ? null : item.idUnico)}
+                              className="p-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white transition"
+                              title="Ver detalle cronológico de llamadas"
+                            >
+                              {esExpandido ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* DESPLIEGUE DETALLADO DE TRAZABILIDAD Y CRONOLOGÍA DE INTENTOS */}
+                        {esExpandido && (
+                          <div className="mt-3 pt-3 border-t border-slate-800 bg-slate-950/60 rounded-xl p-3 space-y-2">
+                            <p className="text-[10px] font-black text-purple-400 uppercase tracking-wider flex items-center gap-1">
+                              <History className="w-3 h-3" /> Trazabilidad de Intentos y Eventos ({item.eventos.length}):
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {item.eventos.map((e, eIdx) => (
+                                <div key={eIdx} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-[11px]">
+                                  <span className="font-mono text-slate-400 font-bold">{e.horaFormateada}</span>
+                                  <span className="font-extrabold text-white">→</span>
+                                  <span className={`font-bold ${
+                                    e.estado === 'NO_RESPONDIO' ? 'text-amber-400' :
+                                    e.estado === 'DADO_DE_BAJA' ? 'text-rose-400 font-black' :
+                                    e.estado === 'EN_CONSULTA' ? 'text-emerald-400' :
+                                    e.estado === 'ATENDIDO' ? 'text-cyan-300' : 'text-blue-400'
+                                  }`}>
+                                    {e.estado.replace('_', ' ')}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Pie del Modal */}
+            <div className="flex justify-between items-center pt-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
+              <span className="text-xs text-slate-400 font-medium">
+                Mostrando {historialFiltradoAuditoria.length} atenciones registradas
+              </span>
+              <button
+                onClick={() => setMostrarModalHistorial(false)}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg"
+              >
+                Cerrar
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* MODALES ADICIONALES (Edición, Nuevo Registro, Módulos, Login, Comunicado, Reemplazo, Reporte Excel, Llamar Paciente) */}
       {medicoParaEditarPaciente && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -1935,97 +2204,6 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL AUDITORÍA CON REGISTRO COMPLETO */}
-      {mostrarModalHistorial && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`w-full max-w-3xl rounded-3xl p-6 shadow-2xl border ${
-            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
-          }`}>
-            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
-              <div className="flex items-center space-x-2">
-                <History className="w-5 h-5 text-purple-500" />
-                <h3 className="text-lg font-bold">Auditoría y Tiempos de Llamados</h3>
-              </div>
-              <button onClick={() => setMostrarModalHistorial(false)} className="text-slate-400 hover:text-slate-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="max-h-80 overflow-y-auto space-y-2 pr-1 mb-6">
-              {historialLlamados.length === 0 ? (
-                <p className="text-sm text-slate-400 italic text-center py-6">No hay registros en la base de datos.</p>
-              ) : (
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className={`border-b ${temaClaro ? 'border-slate-200 text-slate-600' : 'border-slate-800 text-slate-400'}`}>
-                      <th className="py-2 px-3">Fecha / Hora</th>
-                      <th className="py-2 px-3">Paciente</th>
-                      <th className="py-2 px-3">Médico</th>
-                      <th className="py-2 px-3">Etapa del Proceso</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historialLlamados.map((h, i) => (
-                      <tr key={i} className={`border-b ${
-                        temaClaro ? 'border-slate-100 hover:bg-slate-50' : 'border-slate-800/50 hover:bg-slate-800/40'
-                      }`}>
-                        <td className="py-2 px-3 font-mono font-bold text-slate-400">
-                          {h.fechaFormateada} {h.horaFormateada}
-                        </td>
-                        <td className="py-2 px-3 font-bold text-cyan-400 uppercase">{h.paciente}</td>
-                        <td className="py-2 px-3">{h.medico}</td>
-                        <td className="py-2 px-3 font-bold">
-                          {h.estado === 'LLAMADO' && (
-                            <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                              1. VOCEO / LLAMADO
-                            </span>
-                          )}
-                          {h.estado === 'EN_CONSULTA' && (
-                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              2. INGRESÓ A CONSULTA
-                            </span>
-                          )}
-                          {h.estado === 'ATENDIDO' && (
-                            <span className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
-                              3. ATENCIÓN FINALIZADA
-                            </span>
-                          )}
-                          {h.estado === 'NO_RESPONDIO' && (
-                            <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                              NO RESPONDIO
-                            </span>
-                          )}
-                          {h.estado === 'RE_LLAMADO' && (
-                            <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
-                              RE-LLAMADO
-                            </span>
-                          )}
-                          {h.estado === 'DADO_DE_BAJA' && (
-                            <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                              DADO DE BAJA
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            <div className="flex justify-end">
-              <button
-                onClick={() => setMostrarModalHistorial(false)}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg"
-              >
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODALES AUXILIARES */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
