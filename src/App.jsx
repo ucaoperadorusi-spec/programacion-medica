@@ -1276,7 +1276,7 @@ export default function App() {
                 ? 'bg-gradient-to-r from-rose-500 to-amber-400 bg-clip-text text-transparent'
                 : temaClaro ? 'text-blue-900' : 'bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent'
             }`}>
-              H. II PUCALLPA / {servicioActivo === 'EMERGENCIA' ? 'SERVICIO DE EMERGENCIA 24H' : 'CONSULTA EXTERNA'}
+              H. II PUCALLPA / {servicioActivo === 'EMERGENCIA' ? 'EMERGENCIA 24H' : 'CONSULTA EXTERNA'}
             </h1>
             <p className={`text-xs font-medium ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
               {modoTvActivo && moduloActualTv 
