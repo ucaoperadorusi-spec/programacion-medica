@@ -7,7 +7,8 @@ import {
   Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, 
   CheckCircle, Megaphone, Edit3, MapPin, Tv, Play, Pause, UserCheck, 
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
-  Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren 
+  Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
+  Timer
 } from 'lucide-react';
 
 export default function App() {
@@ -36,7 +37,7 @@ export default function App() {
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
-  // Configuración estilizada de estados con harmonía de colores entre badges, tarjetas y botones
+  // Configuración estilizada de estados
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
@@ -169,6 +170,23 @@ export default function App() {
     const d = new Date();
     const offset = d.getTimezoneOffset() * 60000;
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
+  };
+
+  // Cálculo del tiempo transcurrido en minutos / horas
+  const obtenerTiempoTranscurrido = (fechaIso) => {
+    if (!fechaIso) return null;
+    const inicio = new Date(fechaIso).getTime();
+    const ahora = horaActual.getTime();
+    const diffMs = ahora - inicio;
+    if (isNaN(diffMs) || diffMs < 0) return '0 min';
+
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 1) return '< 1 min';
+    if (diffMins < 60) return `${diffMins} min`;
+
+    const horas = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return `${horas}h ${mins}m`;
   };
 
   const esEspecialidadEmergencia = (area = '', rol = '') => {
@@ -316,11 +334,14 @@ export default function App() {
     try {
       const ids = Array.isArray(idsDocs) ? idsDocs : [idsDocs];
       const batch = writeBatch(db);
+      const ahoraIso = new Date().toISOString();
+
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, { 
           estado: nuevoEstado,
-          pacienteLlamado: nuevoEstado === "LLAMANDO" ? (medObj?.pacienteLlamado || '') : null
+          pacienteLlamado: nuevoEstado === "LLAMANDO" ? (medObj?.pacienteLlamado || '') : null,
+          estadoUltimoCambio: ahoraIso
         });
       });
       await batch.commit();
@@ -339,12 +360,14 @@ export default function App() {
     try {
       const ids = Array.isArray(medicoParaLlamar.ids) ? medicoParaLlamar.ids : [medicoParaLlamar.id];
       const batch = writeBatch(db);
+      const ahoraIso = new Date().toISOString();
 
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
         batch.update(medRef, {
           estado: "LLAMANDO",
-          pacienteLlamado: nombreLimpio
+          pacienteLlamado: nombreLimpio,
+          estadoUltimoCambio: ahoraIso
         });
       });
 
@@ -471,6 +494,8 @@ export default function App() {
 
     try {
       const colRef = collection(db, "programacion_medica");
+      const ahoraIso = new Date().toISOString();
+
       await addDoc(colRef, {
         Modulo: formNuevo.Modulo.trim() || "Módulo General",
         Area: formNuevo.Area.trim() || "General",
@@ -480,7 +505,8 @@ export default function App() {
         Hora_Inicio: formNuevo.Hora_Inicio.trim() || "--:--",
         Hora_Fin: formNuevo.Hora_Fin.trim() || "--:--",
         TipoServicio: formNuevo.TipoServicio || servicioActivo,
-        estado: "CONSULTA"
+        estado: "CONSULTA",
+        estadoUltimoCambio: ahoraIso
       });
 
       setMostrarModalNuevoRegistro(false);
@@ -680,6 +706,7 @@ export default function App() {
         const modulosDetectados = new Set();
         const listaDuplicados = [];
         let registrosProcesadosCount = 0;
+        const ahoraIso = new Date().toISOString();
 
         jsonData.forEach((item, index) => {
           const medico = getFieldValue(item, ['profesional', 'medico', 'nombre']) || "Sin Nombre";
@@ -758,7 +785,8 @@ export default function App() {
                 Hora_Inicio: String(hInicio).trim(),
                 Hora_Fin: String(hFin).trim(),
                 TipoServicio: tipoServicioFinal,
-                estado: "CONSULTA"
+                estado: "CONSULTA",
+                estadoUltimoCambio: ahoraIso
               });
             }
           }
@@ -833,6 +861,10 @@ export default function App() {
           const existente = mapaMedicos.get(key);
           existente.ids.push(item.id);
           
+          if (item.estadoUltimoCambio) {
+            existente.estadoUltimoCambio = item.estadoUltimoCambio;
+          }
+
           if (!existente.rolesLista.includes(rolLimpio)) {
             existente.rolesLista.push(rolLimpio);
             existente.Rol = existente.rolesLista.join(" / ");
@@ -1215,6 +1247,7 @@ export default function App() {
                       const estadoClave = calcularEstadoInteligente(med, estaActivoAhora);
                       const configEstado = ESTADOS_MEDICO[estadoClave] || ESTADOS_MEDICO.PROGRAMADO;
                       const IconoEstado = configEstado.icon;
+                      const tiempoTranscurrido = obtenerTiempoTranscurrido(med.estadoUltimoCambio);
 
                       return (
                         <div 
@@ -1371,7 +1404,7 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* Contenedor de Estado y Controles del Médico */}
+                          {/* Contenedor de Estado y Controles del Médico con Cronómetro */}
                           <div className={`mt-2 p-3 rounded-xl border space-y-3 ${
                             temaClaro 
                               ? 'bg-slate-50 border-slate-200/80 shadow-inner' 
@@ -1381,6 +1414,12 @@ export default function App() {
                               <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${configEstado.badge}`}>
                                 <IconoEstado className="w-3.5 h-3.5" />
                                 <span>{configEstado.label}</span>
+                                {tiempoTranscurrido && (
+                                  <span className="ml-1 pl-1.5 border-l border-current/30 text-[10px] opacity-90 font-mono font-black flex items-center gap-0.5">
+                                    <Timer className="w-3 h-3 inline" />
+                                    {tiempoTranscurrido}
+                                  </span>
+                                )}
                               </div>
 
                               {puedeModificarEstados && (
