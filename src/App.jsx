@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase';
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged,
+  setPersistence,
+  inMemoryPersistence // 🔒 Para cerrar sesión al refrescar con F5
+} from 'firebase/auth';
 import { collection, onSnapshot, doc, getDocs, writeBatch, setDoc, addDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { 
@@ -172,7 +178,7 @@ export default function App() {
     return new Date(d.getTime() - offset).toISOString().split('T')[0];
   };
 
-  // Cálculo del tiempo transcurrido en minutos / horas
+  // Cálculo del tiempo transcurrido
   const obtenerTiempoTranscurrido = (fechaIso) => {
     if (!fechaIso) return null;
     const inicio = new Date(fechaIso).getTime();
@@ -207,6 +213,31 @@ export default function App() {
     }
   };
 
+  // Volver a llamar al paciente (actualiza Firestore y activa síntesis de voz)
+  const volverALlamarPaciente = async (medObj) => {
+    if (!medObj || !medObj.pacienteLlamado) return;
+
+    hablarNombrePaciente(medObj.pacienteLlamado, medObj.Medico);
+
+    try {
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      const ahoraIso = new Date().toISOString();
+
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+
+      await batch.commit();
+    } catch (err) {
+      console.error("Error al volver a llamar al paciente:", err);
+    }
+  };
+
+  // Control de audio de llamados (Solo reproduce si ocurrió hace menos de 15s)
   useEffect(() => {
     if (servicioActivo !== 'EMERGENCIA') return;
 
@@ -216,9 +247,14 @@ export default function App() {
 
     if (medLlamando) {
       const claveLlamado = `${medLlamando.id}_${medLlamando.pacienteLlamado}`;
+      const tiempoCambio = medLlamando.estadoUltimoCambio ? new Date(medLlamando.estadoUltimoCambio).getTime() : 0;
+      const segundosDesdeLlamado = (new Date().getTime() - tiempoCambio) / 1000;
+
       if (ultimoLlamadoRef.current !== claveLlamado) {
         ultimoLlamadoRef.current = claveLlamado;
-        hablarNombrePaciente(medLlamando.pacienteLlamado, medLlamando.Medico);
+        if (segundosDesdeLlamado < 15) {
+          hablarNombrePaciente(medLlamando.pacienteLlamado, medLlamando.Medico);
+        }
       }
     }
   }, [programacion, servicioActivo]);
@@ -600,6 +636,7 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
+  // Inicio de sesión con inMemoryPersistence (cierra sesión al dar F5)
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
@@ -607,6 +644,8 @@ export default function App() {
     try {
       const cleanEmail = emailInput.trim().toLowerCase();
       const cleanPassword = passwordInput.trim();
+
+      await setPersistence(auth, inMemoryPersistence);
 
       const userCredential = await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
       const user = userCredential.user;
@@ -1267,22 +1306,37 @@ export default function App() {
                                   </p>
                                 )}
 
-                                {/* Aviso de Paciente Llamado (Solo Emergencia) */}
+                                {/* Aviso de Paciente Llamado con Botón Re-llamar */}
                                 {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
-                                  <div className={`mt-3 p-3 rounded-2xl border-2 flex items-center gap-2.5 shadow-lg ${
+                                  <div className={`mt-3 p-3 rounded-2xl border-2 flex items-center justify-between gap-2.5 shadow-lg ${
                                     temaClaro 
                                       ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
                                       : 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-rose-950/50'
                                   } animate-pulse`}>
-                                    <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
-                                    <div className="overflow-hidden">
-                                      <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
-                                        Atendiendo a / Llamando a:
-                                      </p>
-                                      <p className={`text-sm font-black leading-tight truncate ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
-                                        {med.pacienteLlamado}
-                                      </p>
+                                    <div className="flex items-center gap-2.5 overflow-hidden">
+                                      <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
+                                      <div className="overflow-hidden">
+                                        <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
+                                          Atendiendo a / Llamando a:
+                                        </p>
+                                        <p className={`text-sm font-black leading-tight truncate ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
+                                          {med.pacienteLlamado}
+                                        </p>
+                                      </div>
                                     </div>
+
+                                    {/* Botón Re-llamar exclusivo para personal autenticado */}
+                                    {puedeModificarEstados && (
+                                      <button
+                                        type="button"
+                                        onClick={() => volverALlamarPaciente(med)}
+                                        className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center gap-1 shrink-0"
+                                        title="Volver a hacer sonar la llamada en la pantalla TV"
+                                      >
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                        <span>Re-llamar</span>
+                                      </button>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -1499,7 +1553,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Modales mantenidos intactos */}
+      {/* Modales */}
       {medicoParaEditar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
