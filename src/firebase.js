@@ -2,8 +2,8 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyAQcN6GCzkiTeAxpN6_FiSbOXaVBQEQfSo",
+export const firebaseConfig = {
+  apiKey: "AIzaSyAQCN6GCzkiTeAxpN6_FiSbOXaVBQEQFSo",
   authDomain: "programacion-medica-81784.firebaseapp.com",
   projectId: "programacion-medica-81784",
   storageBucket: "programacion-medica-81784.firebasestorage.app",
