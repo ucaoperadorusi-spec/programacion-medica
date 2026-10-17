@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, firebaseConfig } from './firebase'; // 👈 Asegúrate de exportar firebaseConfig en firebase.js
+import { db, auth, firebaseConfig } from './firebase';
 import { initializeApp } from 'firebase/app';
 import { 
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
-  setPersistence,
-  inMemoryPersistence,
   getAuth as getAuthSecondary,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { 
   collection, onSnapshot, doc, getDoc, getDocs, writeBatch, setDoc, addDoc, updateDoc, deleteDoc 
@@ -22,7 +22,6 @@ import {
   Timer, History, UserMinus, AlertCircle, Check, LogIn, Search, ChevronDown, ChevronUp,
   Download, Stethoscope, Users
 } from 'lucide-react';
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 // ==========================================
 // COMPONENTE: PESTAÑA GESTIÓN DE USUARIOS
@@ -35,7 +34,7 @@ function GestionUsuarios({ temaClaro }) {
   const [formUsuario, setFormUsuario] = useState({
     nombre: '',
     email: '',
-    password: '', // Campo de contraseña añadido
+    password: '',
     rol: 'OPERADOR',
     servicio: 'TODOS',
     activo: true
@@ -328,7 +327,7 @@ function GestionUsuarios({ temaClaro }) {
 }
 
 // ==========================================
-// COMPONENTE PRINCIPAL
+// COMPONENTE PRINCIPAL: APP
 // ==========================================
 export default function App() {
   const [programacion, setProgramacion] = useState([]);
@@ -965,6 +964,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
+  // ESCUCHADOR DE SESIÓN CON BÚSQUEDA Y FALLBACK AUTOMÁTICO DE ROL
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
@@ -976,22 +976,20 @@ export default function App() {
 
           if (userSnap.exists() && userSnap.data().activo !== false) {
             setRolUsuario(userSnap.data().rol || 'OPERADOR');
+          } else if (emailLimpio === 'uca.operadorusi@essalud.gob.pe') {
+            setRolUsuario('ADMIN');
+          } else if (emailLimpio.includes('admision')) {
+            setRolUsuario('ADMISION');
           } else {
-            // Respaldo de emergencia exclusivo para el Administrador Principal
-            const correosAdmin = ['uca.operadorusi@essalud.gob.pe'];
-            const correosAdmision = ['admision.emergencia@essalud.gob.pe', 'admision@essalud.gob.pe'];
-
-            if (correosAdmin.includes(emailLimpio)) {
-              setRolUsuario('ADMIN');
-            } else if (correosAdmision.includes(emailLimpio) || emailLimpio.includes('admision')) {
-              setRolUsuario('ADMISION');
-            } else {
-              setRolUsuario('OPERADOR');
-            }
+            setRolUsuario('OPERADOR');
           }
         } catch (e) {
           console.error("Error al obtener rol del usuario:", e);
-          setRolUsuario('OPERADOR');
+          if (emailLimpio === 'uca.operadorusi@essalud.gob.pe') {
+            setRolUsuario('ADMIN');
+          } else {
+            setRolUsuario('OPERADOR');
+          }
         }
       } else {
         setRolUsuario(null);
@@ -1376,44 +1374,62 @@ export default function App() {
   };
 
   // INICIO DE SESIÓN CON CORREO Y CONTRASEÑA
-const handleLogin = async (e) => {
-  e.preventDefault();
-  setErrorPin(false);
-
-  try {
-    const cleanEmail = emailInput.trim().toLowerCase();
-    const cleanPassword = passwordInput.trim();
-
-    // Se eliminó setPersistence(auth, inMemoryPersistence) que cerraba la sesión al recargar
-    await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
-
-    setMostrarModalLogin(false);
-    setEmailInput('');
-    setPasswordInput('');
-  } catch (error) {
-    console.error("Error al iniciar sesión:", error);
-    setErrorPin(true);
-  }
-};
-
-// INICIO DE SESIÓN CON GOOGLE
-const loginConGoogle = async () => {
-  const provider = new GoogleAuthProvider();
-  // Obliga a Google a mostrar el selector de cuentas
-  provider.setCustomParameters({
-    prompt: 'select_account'
-  });
-
-  try {
+  const handleLogin = async (e) => {
+    e.preventDefault();
     setErrorPin(false);
-    const result = await signInWithPopup(auth, provider);
-    console.log("Usuario autenticado exitosamente:", result.user.email);
-    setMostrarModalLogin(false);
-  } catch (error) {
-    console.error("Error al iniciar sesión con Google:", error.code, error.message);
-    setErrorPin(true);
-  }
-};
+
+    try {
+      const cleanEmail = emailInput.trim().toLowerCase();
+      const cleanPassword = passwordInput.trim();
+
+      await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+
+      setMostrarModalLogin(false);
+      setEmailInput('');
+      setPasswordInput('');
+    } catch (error) {
+      console.error("Error al iniciar sesión:", error);
+      setErrorPin(true);
+    }
+  };
+
+  // INICIO DE SESIÓN CON GOOGLE CON AUTOREGISTRO EN FIRESTORE
+  const loginConGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
+
+    try {
+      setErrorPin(false);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const emailClean = user.email.toLowerCase().trim();
+
+      // Consultar perfil en Firestore
+      const userDocRef = doc(db, "usuarios", emailClean);
+      const userSnap = await getDoc(userDocRef);
+
+      // Si es la primera vez que ingresa, crear su perfil en Firestore
+      if (!userSnap.exists()) {
+        const esAdminPrincipal = emailClean === 'uca.operadorusi@essalud.gob.pe';
+        await setDoc(userDocRef, {
+          nombre: user.displayName || emailClean.split('@')[0],
+          email: emailClean,
+          rol: esAdminPrincipal ? 'ADMIN' : 'OPERADOR',
+          servicio: 'TODOS',
+          activo: true,
+          fechaCreacion: new Date().toISOString()
+        });
+      }
+
+      console.log("Usuario autenticado exitosamente con Google:", emailClean);
+      setMostrarModalLogin(false);
+    } catch (error) {
+      console.error("Error al iniciar sesión con Google:", error.code, error.message);
+      setErrorPin(true);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -2080,7 +2096,7 @@ const loginConGoogle = async () => {
                                     </p>
                                   )}
 
-                                  {/* PASO 1: BLOQUE ROJO "LLAMANDO A:" */}
+                                  {/* BLOQUE ROJO "LLAMANDO A:" */}
                                   {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
                                     <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                                       temaClaro 
@@ -2158,7 +2174,7 @@ const loginConGoogle = async () => {
                                     </div>
                                   )}
 
-                                  {/* PASO 2: BLOQUE VERDE "EN CONSULTA CON PACIENTE" */}
+                                  {/* BLOQUE VERDE "EN CONSULTA CON PACIENTE" */}
                                   {servicioActivo === 'EMERGENCIA' && estadoClave === "CONSULTA" && med.pacienteLlamado && (
                                     <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                                       temaClaro 
@@ -2199,7 +2215,7 @@ const loginConGoogle = async () => {
                                         )}
                                       </div>
 
-                                      {/* PASO 3: FINALIZAR ATENCIÓN */}
+                                      {/* FINALIZAR ATENCIÓN */}
                                       {puedeModificarEstados && (
                                         <div className="flex items-center gap-2 pt-1 border-t border-emerald-500/30 w-full">
                                           <button
@@ -2271,7 +2287,7 @@ const loginConGoogle = async () => {
                                                   </button>
                                                 )}
 
-                                                {/* BOTÓN REGISTRAR INASISTENCIA DEFINITIVA */}
+                                                {/* MARCAR INASISTENCIA DEFINITIVA */}
                                                 {superoLimiteIntentos && (
                                                   <button
                                                     onClick={() => marcarInasistenciaDefinitiva(med, ina.paciente)}
@@ -3313,7 +3329,7 @@ const loginConGoogle = async () => {
               </div>
             </form>
 
-            {/* BOTÓN DE GOOGLE AÑADIDO AQUÍ */}
+            {/* BOTÓN DE GOOGLE */}
             <div className="mt-4 pt-4 border-t border-slate-700/50 text-center">
               <button
                 type="button"
