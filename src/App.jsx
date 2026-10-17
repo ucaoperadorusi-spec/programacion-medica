@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth } from './firebase';
+import { db, auth, firebaseConfig } from './firebase'; // 👈 Asegúrate de exportar firebaseConfig en firebase.js
+import { initializeApp } from 'firebase/app';
 import { 
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
   setPersistence,
-  inMemoryPersistence 
+  inMemoryPersistence,
+  getAuth as getAuthSecondary,
+  createUserWithEmailAndPassword
 } from 'firebase/auth';
 import { 
   collection, onSnapshot, doc, getDoc, getDocs, writeBatch, setDoc, addDoc, updateDoc, deleteDoc 
@@ -19,6 +22,7 @@ import {
   Timer, History, UserMinus, AlertCircle, Check, LogIn, Search, ChevronDown, ChevronUp,
   Download, Stethoscope, Users
 } from 'lucide-react';
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 // ==========================================
 // COMPONENTE: PESTAÑA GESTIÓN DE USUARIOS
@@ -27,9 +31,11 @@ function GestionUsuarios({ temaClaro }) {
   const [usuarios, setUsuarios] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [mostrarModalNuevo, setMostrarModalNuevo] = useState(false);
+  const [cargandoGuardado, setCargandoGuardado] = useState(false);
   const [formUsuario, setFormUsuario] = useState({
     nombre: '',
     email: '',
+    password: '', // Campo de contraseña añadido
     rol: 'OPERADOR',
     servicio: 'TODOS',
     activo: true
@@ -45,10 +51,23 @@ function GestionUsuarios({ temaClaro }) {
 
   const guardarUsuario = async (e) => {
     e.preventDefault();
-    if (!formUsuario.email.trim()) return;
+    if (!formUsuario.email.trim() || !formUsuario.password.trim()) return;
 
+    if (formUsuario.password.length < 6) {
+      alert("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+
+    setCargandoGuardado(true);
     try {
       const emailClean = formUsuario.email.trim().toLowerCase();
+
+      // 1. Crear usuario en Firebase Auth usando aplicación en segundo plano
+      const secondaryApp = initializeApp(firebaseConfig, "SecondaryAuthApp_" + Date.now());
+      const secondaryAuth = getAuthSecondary(secondaryApp);
+      await createUserWithEmailAndPassword(secondaryAuth, emailClean, formUsuario.password);
+
+      // 2. Guardar perfil y permisos en Firestore
       await setDoc(doc(db, "usuarios", emailClean), {
         nombre: formUsuario.nombre.trim(),
         email: emailClean,
@@ -59,9 +78,17 @@ function GestionUsuarios({ temaClaro }) {
       });
 
       setMostrarModalNuevo(false);
-      setFormUsuario({ nombre: '', email: '', rol: 'OPERADOR', servicio: 'TODOS', activo: true });
+      setFormUsuario({ nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS', activo: true });
+      alert(`¡Usuario ${emailClean} registrado exitosamente en Authentication y Firestore!`);
     } catch (err) {
       console.error("Error al guardar usuario:", err);
+      if (err.code === 'auth/email-already-in-use') {
+        alert("El correo ya se encuentra registrado en el sistema.");
+      } else {
+        alert("Error al registrar: " + err.message);
+      }
+    } finally {
+      setCargandoGuardado(false);
     }
   };
 
@@ -74,7 +101,7 @@ function GestionUsuarios({ temaClaro }) {
   };
 
   const eliminarUsuario = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este usuario?")) return;
+    if (!window.confirm("¿Seguro que deseas eliminar este usuario de la base de datos?")) return;
     try {
       await deleteDoc(doc(db, "usuarios", id));
     } catch (err) {
@@ -109,7 +136,6 @@ function GestionUsuarios({ temaClaro }) {
         </button>
       </div>
 
-      {/* Buscador */}
       <div className="mb-4 relative max-w-md">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
         <input
@@ -123,7 +149,6 @@ function GestionUsuarios({ temaClaro }) {
         />
       </div>
 
-      {/* Tabla de Usuarios */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
@@ -188,7 +213,6 @@ function GestionUsuarios({ temaClaro }) {
         </table>
       </div>
 
-      {/* Modal Registrar Nuevo Usuario */}
       {mostrarModalNuevo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${
@@ -226,6 +250,21 @@ function GestionUsuarios({ temaClaro }) {
                   value={formUsuario.email}
                   onChange={e => setFormUsuario({...formUsuario, email: e.target.value})}
                   placeholder="usuario@essalud.gob.pe"
+                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">Contraseña de Acceso:</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={formUsuario.password}
+                  onChange={e => setFormUsuario({...formUsuario, password: e.target.value})}
+                  placeholder="Mínimo 6 caracteres"
                   className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
                     temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
                   }`}
@@ -274,9 +313,10 @@ function GestionUsuarios({ temaClaro }) {
                 </button>
                 <button
                   type="submit"
+                  disabled={cargandoGuardado}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg"
                 >
-                  Guardar
+                  {cargandoGuardado ? 'Guardando...' : 'Guardar y Crear'}
                 </button>
               </div>
             </form>
@@ -298,43 +338,31 @@ export default function App() {
   const [cargando, setCargando] = useState(false);
   const [soloTurnoActual, setSoloTurnoActual] = useState(false);
 
-  // Navegación de Vistas Principal ('MONITOR' | 'USUARIOS')
   const [vistaActiva, setVistaActiva] = useState('MONITOR');
-
-  // Estados para reporte de duplicados en Excel
   const [duplicadosOmitidos, setDuplicadosOmitidos] = useState([]);
   const [mostrarModalReporte, setMostrarModalReporte] = useState(false);
 
-  // Estados para Llamar/Ingresar Paciente
   const [medicoParaLlamar, setMedicoParaLlamar] = useState(null);
   const [nombrePaciente, setNombrePaciente] = useState('');
   const [consultorioTopico, setConsultorioTopico] = useState('');
   const [accionPacienteAnterior, setAccionPacienteAnterior] = useState('FINALIZAR_ATENDIDO');
 
-  // Estado para Editar Nombre del Paciente
   const [medicoParaEditarPaciente, setMedicoParaEditarPaciente] = useState(null);
   const [nuevoNombreEditado, setNuevoNombreEditado] = useState('');
 
-  // Historial General de Llamados (Firestore) y Modal
   const [historialLlamados, setHistorialLlamados] = useState([]);
   const [mostrarModalHistorial, setMostrarModalHistorial] = useState(false);
 
-  // Filtros del Modal de Auditoría
   const [busquedaAuditoria, setBusquedaAuditoria] = useState('');
   const [filtroEtapaAuditoria, setFiltroEtapaAuditoria] = useState('TODOS');
   const [filaExpandidaAuditoria, setFilaExpandidaAuditoria] = useState(null);
 
-  // Selección de servicio activo
   const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
-
-  // Modo Tema
   const [temaClaro, setTemaClaro] = useState(false);
 
-  // Módulos visibles seleccionados
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
-  // Configuración de estados del médico
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
@@ -380,7 +408,6 @@ export default function App() {
     }
   };
 
-  // Autenticación y roles
   const [rolUsuario, setRolUsuario] = useState(null);
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
@@ -388,29 +415,24 @@ export default function App() {
   const [passwordInput, setPasswordInput] = useState('');
   const [errorPin, setErrorPin] = useState(false);
 
-  // Modal para Reemplazo de Emergencia
   const [medicoParaReemplazo, setMedicoParaReemplazo] = useState(null);
   const [nombreReemplazo, setNombreReemplazo] = useState('');
 
-  // Modal para Editar Campos de la Programación
   const [medicoParaEditar, setMedicoParaEditar] = useState(null);
   const [formEdicion, setFormEdicion] = useState({
     Medico: '', Area: '', Rol: '', Modulo: '', Hora_Inicio: '', Hora_Fin: '', Fecha: '', TipoServicio: 'CONSULTA_EXTERNA'
   });
 
-  // Modal para Agregar Registro Manual
   const [mostrarModalNuevoRegistro, setMostrarModalNuevoRegistro] = useState(false);
   const [formNuevo, setFormNuevo] = useState({
     Medico: '', Area: '', Rol: '', Modulo: '', Hora_Inicio: '', Hora_Fin: '', Fecha: '', TipoServicio: 'CONSULTA_EXTERNA'
   });
 
-  // Modo TV
   const [modoTvActivo, setModoTvActivo] = useState(false);
   const [indiceRotacionTv, setIndiceRotacionTv] = useState(0);
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
 
-  // Cola de voz
   const colaLlamadosRef = useRef([]);
   const reproduciendoAudioRef = useRef(false);
   const llamadosProcesadosRef = useRef(new Set());
@@ -481,7 +503,6 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  // REGISTRO AUDITORÍA EN FIRESTORE
   const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio, horaIngresoIso = null, consultorio = '') => {
     try {
       await addDoc(collection(db, "historial_llamados"), {
@@ -515,7 +536,6 @@ export default function App() {
     }
   };
 
-  // CÁLCULO DE PACIENTES INASISTENTES PENDIENTES DEL DÍA
   const obtenerInasistentesPendientes = (nombreMedico) => {
     const hoy = obtenerFechaHoyLocal();
     const historialMedicoHoy = historialLlamados.filter(
@@ -560,7 +580,6 @@ export default function App() {
     return pendientes;
   };
 
-  // MARCAR INASISTENCIA DEFINITIVA
   const marcarInasistenciaDefinitiva = async (medObj, pacienteNombre) => {
     if (!medObj || !pacienteNombre) return;
     if (!window.confirm(`¿Seguro que desea registrar la INASISTENCIA definitiva del paciente ${pacienteNombre}?`)) return;
@@ -592,7 +611,6 @@ export default function App() {
     }
   };
 
-  // INGRESAR A CONSULTA
   const ingresarAConsultaConPaciente = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
@@ -621,7 +639,6 @@ export default function App() {
     }
   };
 
-  // FINALIZAR ATENCIÓN (ATENDIDO)
   const marcarPacienteAtendido = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
@@ -651,7 +668,6 @@ export default function App() {
     }
   };
 
-  // MARCAR NO RESPONDIO
   const marcarPacienteNoRespondio = async (medObj) => {
     if (!medObj || !medObj.pacienteLlamado) return;
 
@@ -752,7 +768,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // AGRUPADOR INTELIGENTE DE AUDITORÍA
   const historialAgrupadoAuditoria = React.useMemo(() => {
     const mapaGrupos = new Map();
 
@@ -796,7 +811,6 @@ export default function App() {
     return resultado;
   }, [historialLlamados]);
 
-  // FILTRADO DE AUDITORÍA
   const historialFiltradoAuditoria = historialAgrupadoAuditoria.filter(grupo => {
     const termino = busquedaAuditoria.trim().toLowerCase();
     const coincideTexto = !termino || 
@@ -816,7 +830,6 @@ export default function App() {
     return true;
   });
 
-  // EXPORTACIÓN A EXCEL AUDITORÍA
   const descargarReporteExcelAuditoria = () => {
     if (!historialFiltradoAuditoria || historialFiltradoAuditoria.length === 0) {
       alert("No hay registros disponibles para exportar en el reporte actual.");
@@ -952,7 +965,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // CONSULTA DINÁMICA DE ROLES DESDE FIRESTORE EN "USUARIOS"
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
@@ -965,7 +977,7 @@ export default function App() {
           if (userSnap.exists() && userSnap.data().activo !== false) {
             setRolUsuario(userSnap.data().rol || 'OPERADOR');
           } else {
-            // Fallback por defecto si aún no existe en la colección de usuarios
+            // Respaldo de emergencia exclusivo para el Administrador Principal
             const correosAdmin = ['uca.operadorusi@essalud.gob.pe'];
             const correosAdmision = ['admision.emergencia@essalud.gob.pe', 'admision@essalud.gob.pe'];
 
@@ -1363,6 +1375,7 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
+  // INICIO DE SESIÓN CORREO Y CLAVE
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
@@ -1378,6 +1391,19 @@ export default function App() {
       setEmailInput('');
       setPasswordInput('');
     } catch (error) {
+      setErrorPin(true);
+    }
+  };
+
+  // INICIO DE SESIÓN CON GOOGLE
+  const loginConGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      setErrorPin(false);
+      await signInWithPopup(auth, provider);
+      setMostrarModalLogin(false);
+    } catch (error) {
+      console.error("Error al iniciar sesión con Google:", error);
       setErrorPin(true);
     }
   };
@@ -3209,6 +3235,7 @@ export default function App() {
         </div>
       )}
 
+      {/* MODAL ACCESO CON BOTÓN DE GOOGLE */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border transition-all ${
@@ -3278,6 +3305,23 @@ export default function App() {
                 </button>
               </div>
             </form>
+
+            {/* BOTÓN DE GOOGLE AÑADIDO AQUÍ */}
+            <div className="mt-4 pt-4 border-t border-slate-700/50 text-center">
+              <button
+                type="button"
+                onClick={loginConGoogle}
+                className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 border border-slate-700"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.6l3.1-3.1C17.3 1.7 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.2 9 5 12 5z"/>
+                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5 3.7-8.8z"/>
+                  <path fill="#FBBC05" d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.3s.2-1.6.4-2.3L1.9 7.3C.7 9.7 0 10.8 0 12s.7 2.3 1.9 4.7l3.7-2.9z"/>
+                  <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.2-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"/>
+                </svg>
+                Continuar con Google
+              </button>
+            </div>
           </div>
         </div>
       )}
