@@ -2,8 +2,7 @@ import React from 'react';
 import { 
   MapPin, Stethoscope, Bell, Pencil, LogIn, RefreshCw, 
   UserMinus, UserCheck, Check, ListPlus, UserPlus, AlertCircle, 
-  UserX, Trash2, Timer, Stethoscope as StethoIcon, CheckCircle,
-  Activity
+  UserX, Trash2, Timer, CheckCircle, Activity
 } from 'lucide-react';
 
 export default function ProgramacionMedica({
@@ -170,27 +169,27 @@ export default function ProgramacionMedica({
                             </p>
                           )}
 
-                {servicioActivo === 'EMERGENCIA' && (
-                <div className="flex items-center gap-2 mt-1">
-                    <p className="text-xs font-bold text-cyan-400 flex items-center gap-1">
-                    <Stethoscope className="w-3.5 h-3.5" />
-                  <span>{med.consultorioTopico || "Sin consultorio asignado"}</span>
-                </p>
-                  {puedeModificarEstados && (
-                <button
-                type="button"
-                onClick={() => {
-                setMedicoParaLlamar(med);
-                setNombrePaciente(med.pacienteLlamado || '');
-                setConsultorioTopico(med.consultorioTopico || '');
-              }}
-              className="text-[10px] text-amber-400 hover:underline font-bold"
-              >
-              (Cambiar Ubicación)
-            </button>
-          )}
-      </div>
-    )}
+                          {servicioActivo === 'EMERGENCIA' && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <p className="text-xs font-bold text-cyan-400 flex items-center gap-1">
+                                <Stethoscope className="w-3.5 h-3.5" />
+                                <span>{med.consultorioTopico || "Sin consultorio asignado"}</span>
+                              </p>
+                              {puedeModificarEstados && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMedicoParaLlamar(med);
+                                    setNombrePaciente(med.pacienteLlamado || '');
+                                    setConsultorioTopico(med.consultorioTopico || '');
+                                  }}
+                                  className="text-[10px] text-amber-400 hover:underline font-bold"
+                                >
+                                  (Cambiar Ubicación)
+                                </button>
+                              )}
+                            </div>
+                          )}
 
                           {/* BLOQUE VOCEO LLAMANDO */}
                           {servicioActivo === 'EMERGENCIA' && isLlamando && med.pacienteLlamado && (
