@@ -406,7 +406,7 @@ export default function App() {
   const [consultorioTopico, setConsultorioTopico] = useState('');
   const [accionPacienteAnterior, setAccionPacienteAnterior] = useState('FINALIZAR_ATENDIDO');
 
-  // Estados de Lista de Espera (Adminsión)
+  // Estados de Lista de Espera (Admisión)
   const [listaEspera, setListaEspera] = useState([]);
   const [medicoParaCola, setMedicoParaCola] = useState(null);
 
@@ -639,10 +639,8 @@ export default function App() {
       const ahoraIso = new Date().toISOString();
       const batch = writeBatch(db);
 
-      // Actualizar la cola
       batch.update(doc(db, "lista_espera", pacienteEnCola.id), { estado: 'LLAMADO' });
 
-      // Actualizar la tarjeta médica para que lance el llamado de TV
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
@@ -654,13 +652,11 @@ export default function App() {
       });
       await batch.commit();
 
-      // Registro de Auditoría
       await registrarEnHistorialFirestore(medObj.Medico, pacienteEnCola.paciente, 'LLAMADO', servicioActivo, ahoraIso, medObj.consultorioTopico);
     } catch (err) {
       console.error("Error llamando al siguiente en cola:", err);
     }
   };
-
 
   const obtenerInasistentesPendientes = (nombreMedico) => {
     const hoy = obtenerFechaHoyLocal();
@@ -841,9 +837,6 @@ export default function App() {
       });
 
       await batch.commit();
-      // SE ELIMINÓ: await registrarEnHistorialFirestore(..., 'RE_LLAMADO') 
-      // para no saturar el excel / reporte de auditoría.
-      
     } catch (err) {
       console.error("Error al re-llamar paciente:", err);
     }
@@ -952,7 +945,7 @@ export default function App() {
       if (filtroEtapaAuditoria === 'ATENDIDO' && grupo.estadoFinal !== 'ATENDIDO') return false;
       if (filtroEtapaAuditoria === 'EN_CONSULTA' && grupo.estadoFinal !== 'EN_CONSULTA') return false;
       if (filtroEtapaAuditoria === 'NO_RESPONDIO' && grupo.estadoFinal !== 'NO_RESPONDIO') return false;
-      if (filtroEtapaAuditoria === 'LLAMADO' && (grupo.estadoFinal !== 'LLAMADO' && grupo.estadoFinal !== 'RE_LLAMADO')) return false;
+      if (filtroEtapaAuditoria === 'LLAMANDO' && (grupo.estadoFinal !== 'LLAMADO' && grupo.estadoFinal !== 'RE_LLAMADO')) return false;
     }
 
     return true;
@@ -1156,12 +1149,42 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // ==========================================
+  // LÓGICA MODO TV: ROTACIÓN E INTERRUPCIÓN INTELIGENTE
+  // ==========================================
+  // Detectar si hay un llamado activo en cualquiera de los médicos
+  const medicoLlamandoEnVivo = programacion.find(
+    p => p.estado === 'LLAMANDO' && p.pacienteLlamado && modulosSeleccionados.includes(p.Modulo || "Módulo General")
+  );
+
+  // Si hay un paciente siendo llamado, el Modo TV salta inmediatamente a su módulo
+  useEffect(() => {
+    if (!modoTvActivo || modulosSeleccionados.length === 0) return;
+
+    if (medicoLlamandoEnVivo) {
+      const moduloLlamado = medicoLlamandoEnVivo.Modulo || "Módulo General";
+      const indiceModuloLlamado = modulosSeleccionados.indexOf(moduloLlamado);
+
+      if (indiceModuloLlamado !== -1 && indiceModuloLlamado !== (indiceRotacionTv % modulosSeleccionados.length)) {
+        setIndiceRotacionTv(indiceModuloLlamado);
+        if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+      }
+    }
+  }, [medicoLlamandoEnVivo, modoTvActivo, modulosSeleccionados]);
+
+  // Ciclo y scroll del Modo TV
   useEffect(() => {
     let scrollInterval = null;
     let timeoutAccion = null;
     let isWaiting = false;
 
     if (modoTvActivo && modulosSeleccionados.length > 0 && mainScrollRef.current) {
+      // Si hay un paciente siendo llamado en vivo, congelamos la rotación en esa pantalla durante el voceo
+      if (medicoLlamandoEnVivo) {
+        if (mainScrollRef.current) mainScrollRef.current.scrollTop = 0;
+        return; 
+      }
+
       timeoutAccion = setTimeout(() => {
         scrollInterval = setInterval(() => {
           const el = mainScrollRef.current;
@@ -1194,7 +1217,7 @@ export default function App() {
       clearInterval(scrollInterval);
       clearTimeout(timeoutAccion);
     };
-  }, [modoTvActivo, modulosSeleccionados, indiceRotacionTv, cicloTv]);
+  }, [modoTvActivo, modulosSeleccionados, indiceRotacionTv, cicloTv, medicoLlamandoEnVivo]);
 
   const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHora = false, medObj = null) => {
     if (servicioActivo === 'EMERGENCIA' && rolUsuario === 'ADMISION') {
@@ -1910,7 +1933,7 @@ export default function App() {
             </h1>
             <p className={`text-xs font-medium ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
               {modoTvActivo && moduloActualTv 
-                ? `VISTA TV: Proyectando ${moduloActualTv}` 
+                ? `VISTA TV: Proyectando ${moduloActualTv} ${medicoLlamandoEnVivo ? '🔔 (INTERRUPCIÓN POR VOCEO)' : ''}` 
                 : `Mostrando ${modulosSeleccionados.length} de ${todosLosModulosDisponibles.length} módulo(s)`}
             </p>
           </div>
@@ -2186,7 +2209,6 @@ export default function App() {
                         const estadoA = calcularEstadoInteligente(a, estaEnTurno(a.horarios));
                         const estadoB = calcularEstadoInteligente(b, estaEnTurno(b.horarios));
 
-                        // Prioridad 1 es LLAMANDO (Sube las tarjetas al inicio del panel)
                         const prioridad = {
                           "LLAMANDO": 1,
                           "CONSULTA": 2,
@@ -2208,12 +2230,10 @@ export default function App() {
 
                         const inasistentesPendientes = obtenerInasistentesPendientes(med.Medico);
                         
-                        // Lista de pacientes esperando a este doctor (Solo Emergencia)
                         const enCola = listaEspera
                           .filter(p => p.medico === med.Medico)
                           .sort((a,b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime());
 
-                        // Efecto Zoom (scale) si está Llamando
                         const isLlamando = estadoClave === "LLAMANDO";
                         const animacionLlamado = isLlamando 
                           ? (temaClaro ? "scale-105 z-20 shadow-2xl ring-4 ring-cyan-500 shadow-cyan-500/40" : "scale-105 z-20 shadow-2xl ring-4 ring-rose-500 shadow-rose-500/50") 
@@ -2225,7 +2245,6 @@ export default function App() {
                             className={`p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 w-full relative ${animacionLlamado} ${configEstado.cardColor}`}
                           >
                             <div>
-                              {/* Cabecera Médico */}
                               <div className="flex justify-between items-start mb-2">
                                 <div className="w-full">
                                   <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
@@ -2237,7 +2256,6 @@ export default function App() {
                                     </p>
                                   )}
 
-                                  {/* Consultorio / Tópico Asignado en Emergencia */}
                                   {servicioActivo === 'EMERGENCIA' && med.consultorioTopico && (
                                     <p className="text-xs font-bold text-cyan-400 flex items-center gap-1 mt-1">
                                       <Stethoscope className="w-3.5 h-3.5" />
@@ -2245,7 +2263,7 @@ export default function App() {
                                     </p>
                                   )}
 
-                                  {/* BLOQUE ROJO "LLAMANDO A:" */}
+                                  {/* BLOQUE VOCEO LLAMANDO */}
                                   {servicioActivo === 'EMERGENCIA' && isLlamando && med.pacienteLlamado && (
                                     <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                                       temaClaro 
@@ -2270,7 +2288,6 @@ export default function App() {
                                           </div>
                                         </div>
 
-                                        {/* Editar nombre */}
                                         {puedeModificarEstados && (
                                           <button
                                             type="button"
@@ -2286,7 +2303,6 @@ export default function App() {
                                         )}
                                       </div>
 
-                                      {/* Botonera de Acción en Llamado */}
                                       {puedeModificarEstados && (
                                         <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-500/30 w-full">
                                           <button
@@ -2323,7 +2339,7 @@ export default function App() {
                                     </div>
                                   )}
 
-                                  {/* BLOQUE VERDE "EN CONSULTA CON PACIENTE" */}
+                                  {/* BLOQUE EN CONSULTA */}
                                   {servicioActivo === 'EMERGENCIA' && estadoClave === "CONSULTA" && med.pacienteLlamado && (
                                     <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                                       temaClaro 
@@ -2348,7 +2364,6 @@ export default function App() {
                                           </div>
                                         </div>
 
-                                        {/* Editar nombre durante consulta */}
                                         {puedeModificarEstados && (
                                           <button
                                             type="button"
@@ -2364,7 +2379,6 @@ export default function App() {
                                         )}
                                       </div>
 
-                                      {/* FINALIZAR ATENCIÓN */}
                                       {puedeModificarEstados && (
                                         <div className="flex items-center gap-2 pt-1 border-t border-emerald-500/30 w-full">
                                           <button
@@ -2381,11 +2395,9 @@ export default function App() {
                                     </div>
                                   )}
 
-                                  {/* BOTONES Y LISTA DE ESPERA - SOLO EMERGENCIA */}
+                                  {/* COLA Y BOTONES EMERGENCIA */}
                                   {servicioActivo === 'EMERGENCIA' && puedeModificarEstados && (
                                     <div className="mt-4 pt-3 border-t border-slate-700/40 space-y-2">
-                                      
-                                      {/* Mostrar pacientes en cola */}
                                       {enCola.length > 0 && !modoTvActivo && (
                                         <div className={`p-2.5 rounded-xl border mb-3 text-[11px] ${
                                           temaClaro ? 'bg-cyan-50 border-cyan-200' : 'bg-slate-900/70 border-slate-700/60'
@@ -2399,7 +2411,6 @@ export default function App() {
                                         </div>
                                       )}
 
-                                      {/* ADMISIÓN: Solo puede encolar */}
                                       {rolUsuario === 'ADMISION' && (
                                         <button
                                           type="button"
@@ -2411,7 +2422,6 @@ export default function App() {
                                         </button>
                                       )}
 
-                                      {/* MÉDICO / ADMIN: Pueden llamar si están libres */}
                                       {rolUsuario !== 'ADMISION' && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                                         <div className="flex gap-2">
                                           {enCola.length > 0 && (
@@ -2441,7 +2451,7 @@ export default function App() {
                                     </div>
                                   )}
 
-                                  {/* BOTÓN INGRESAR / LLAMAR NORMAL PARA CONSULTA EXTERNA */}
+                                  {/* BOTÓN INGRESAR / LLAMAR CONSULTA EXTERNA */}
                                   {servicioActivo === 'CONSULTA_EXTERNA' && puedeModificarEstados && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                                     <div className="mt-3">
                                       <button
@@ -2496,7 +2506,6 @@ export default function App() {
                                                   </button>
                                                 )}
 
-                                                {/* MARCAR INASISTENCIA DEFINITIVA */}
                                                 {superoLimiteIntentos && (
                                                   <button
                                                     onClick={() => marcarInasistenciaDefinitiva(med, ina.paciente)}
@@ -2547,7 +2556,6 @@ export default function App() {
                                 </div>
                               </div>
 
-                              {/* Área y Rol */}
                               <div className="flex flex-wrap items-center gap-2 mb-3">
                                 <span className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
                                   temaClaro 
@@ -2567,7 +2575,6 @@ export default function App() {
                                 )}
                               </div>
 
-                              {/* Horarios */}
                               <div className="space-y-1 mb-4">
                                 <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
                                   Horarios / Turnos:
@@ -2631,7 +2638,6 @@ export default function App() {
                               </div>
                             </div>
 
-                            {/* Estado del Médico y Botonera General */}
                             <div className={`mt-2 p-3 rounded-xl border space-y-3 ${
                               temaClaro 
                                 ? 'bg-slate-50 border-slate-200/80 shadow-inner' 
@@ -2673,7 +2679,6 @@ export default function App() {
                                 )}
                               </div>
 
-                              {/* Botonera de Selección de Estado */}
                               {puedeModificarEstados && (
                                 <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 pt-1">
                                   {Object.keys(ESTADOS_MEDICO).map((key) => {
@@ -2726,7 +2731,7 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL AUDITORÍA CON DESCARGA EXCEL */}
+      {/* MODAL AUDITORÍA */}
       {mostrarModalHistorial && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-4xl rounded-3xl p-6 shadow-2xl border flex flex-col max-h-[90vh] ${
@@ -2934,7 +2939,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL COLA DE ESPERA (ADMISIÓN) */}
+      {/* MODAL COLA DE ESPERA */}
       {medicoParaCola && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2990,7 +2995,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL INGRESAR / LLAMAR PACIENTE MANUAL */}
+      {/* MODAL LLAMAR PACIENTE MANUAL */}
       {medicoParaLlamar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -3115,7 +3120,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALES ADICIONALES (Editar, Nuevo, Subir, etc.) */}
+      {/* MODALES ADICIONALES */}
       {medicoParaEditarPaciente && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -3523,7 +3528,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL ACCESO CON BOTÓN DE GOOGLE */}
+      {/* MODAL ACCESO */}
       {mostrarModalLogin && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-sm rounded-3xl p-6 shadow-2xl border transition-all ${
