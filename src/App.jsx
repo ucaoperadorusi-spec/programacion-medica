@@ -459,6 +459,19 @@ export default function App() {
     const pacienteAVisar = nombreDirecto || medObj?.pacienteLlamado;
     if (!medObj || !pacienteAVisar) return;
 
+    // SI YA HAY UN PACIENTE DIFERENTE SIENDO LLAMADO, ABRIMOS EL MODAL DE RESOLUCIÓN
+    if (
+      medObj.pacienteLlamado && 
+      nombreDirecto && 
+      medObj.pacienteLlamado.trim().toUpperCase() !== nombreDirecto.trim().toUpperCase()
+    ) {
+      setMedicoParaLlamar(medObj);
+      setNombrePaciente(nombreDirecto.trim().toUpperCase());
+      setConsultorioTopico(medObj.consultorioTopico || '');
+      setAccionPacienteAnterior('MARCAR_NO_RESPONDIO'); // Opción por defecto lógica
+      return;
+    }
+
     try {
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
