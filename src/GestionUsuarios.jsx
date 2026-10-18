@@ -2,15 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { db, auth, firebaseConfig } from './firebase';
 import { initializeApp } from 'firebase/app';
 import { 
-  getAuth as getAuthSecondary,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail
+  createUserWithEmailAndPassword, 
+  getAuth as getAuthSecondary, 
+  sendPasswordResetEmail 
 } from 'firebase/auth';
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc 
 } from 'firebase/firestore';
 import { 
-  Shield, UserPlus, Search, Trash2, X, Pencil, Key, Mail
+  Shield, UserPlus, Search, Pencil, Key, Trash2, X, Mail 
 } from 'lucide-react';
 
 export default function GestionUsuarios({ temaClaro }) {
@@ -19,7 +19,6 @@ export default function GestionUsuarios({ temaClaro }) {
   const [mostrarModalNuevo, setMostrarModalNuevo] = useState(false);
   const [cargandoGuardado, setCargandoGuardado] = useState(false);
   
-  // Estados para Edición
   const [mostrarModalEditar, setMostrarModalEditar] = useState(false);
   const [usuarioEditando, setUsuarioEditando] = useState(null);
 
@@ -35,7 +34,6 @@ export default function GestionUsuarios({ temaClaro }) {
     return () => unsubscribe();
   }, []);
 
-  // 1. CREAR NUEVO USUARIO
   const guardarUsuario = async (e) => {
     e.preventDefault();
     if (!formUsuario.email.trim() || !formUsuario.password.trim()) return;
@@ -76,7 +74,6 @@ export default function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 2. DESACTIVAR USUARIO (Borrado Lógico)
   const desactivarUsuario = async (id, email) => {
     if (!window.confirm(`¿Seguro que deseas DESACTIVAR al usuario ${email}? No podrá acceder al sistema.`)) return;
     try {
@@ -89,7 +86,6 @@ export default function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 3. REACTIVAR USUARIO
   const reactivarUsuario = async (id) => {
     try {
       await updateDoc(doc(db, "usuarios", id), { activo: true, estado: "activo" });
@@ -98,7 +94,6 @@ export default function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 4. GUARDAR EDICIÓN
   const guardarEdicionUsuario = async (e) => {
     e.preventDefault();
     if (!usuarioEditando) return;
@@ -116,7 +111,6 @@ export default function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 5. ENVIAR CORREO DE RESTABLECIMIENTO DE CONTRASEÑA
   const enviarCorreoRestablecimiento = async (email) => {
     if (!window.confirm(`¿Enviar enlace al correo ${email} para que el usuario asigne una nueva contraseña?`)) return;
     try {
@@ -137,7 +131,6 @@ export default function GestionUsuarios({ temaClaro }) {
     <div className={`p-6 rounded-3xl border shadow-xl ${
       temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
     }`}>
-      {/* CABECERA */}
       <div className="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-700/50 mb-6">
         <div>
           <h2 className="text-xl font-black text-cyan-400 flex items-center gap-2">
@@ -156,7 +149,6 @@ export default function GestionUsuarios({ temaClaro }) {
         </button>
       </div>
 
-      {/* BUSCADOR */}
       <div className="mb-4 relative max-w-md">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
         <input
@@ -170,7 +162,6 @@ export default function GestionUsuarios({ temaClaro }) {
         />
       </div>
 
-      {/* TABLA DE USUARIOS */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
@@ -217,7 +208,6 @@ export default function GestionUsuarios({ temaClaro }) {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex justify-end gap-1.5">
-                      {/* Botón Editar */}
                       <button
                         onClick={() => { setUsuarioEditando({ ...u }); setMostrarModalEditar(true); }}
                         className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition"
@@ -226,7 +216,6 @@ export default function GestionUsuarios({ temaClaro }) {
                         <Pencil className="w-4 h-4" />
                       </button>
 
-                      {/* Botón Restablecer Contraseña */}
                       <button
                         onClick={() => enviarCorreoRestablecimiento(u.email)}
                         className="p-1.5 text-amber-400 hover:bg-amber-500/20 rounded-lg transition"
@@ -235,7 +224,6 @@ export default function GestionUsuarios({ temaClaro }) {
                         <Key className="w-4 h-4" />
                       </button>
 
-                      {/* Botón Desactivar / Activar */}
                       {u.activo !== false ? (
                         <button
                           onClick={() => desactivarUsuario(u.id, u.email)}
@@ -262,32 +250,30 @@ export default function GestionUsuarios({ temaClaro }) {
         </table>
       </div>
 
-      {/* MODAL REGISTRAR NUEVO */}
       {mostrarModalNuevo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          {/* ... [Aquí va el mismo diseño del modal Nuevo Usuario que ya tenías] ... */}
           <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${temaClaro ? 'bg-white' : 'bg-slate-900 border-slate-800'}`}>
             <div className="flex justify-between pb-3 border-b border-slate-700/50 mb-4">
               <h3 className="text-lg font-bold text-cyan-400 flex items-center gap-2"><UserPlus className="w-5 h-5" /> Registrar Usuario</h3>
-              <button onClick={() => setMostrarModalNuevo(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+              <button onClick={() => setMostrarModalNuevo(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={guardarUsuario} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Nombre Completo:</label>
-                <input type="text" required value={formUsuario.nombre} onChange={e => setFormUsuario({...formUsuario, nombre: e.target.value})} className="w-full p-2.5 rounded-xl border text-xs bg-slate-800 border-slate-700 text-white" />
+                <input type="text" required value={formUsuario.nombre} onChange={e => setFormUsuario({...formUsuario, nombre: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Correo Electrónico:</label>
-                <input type="email" required value={formUsuario.email} onChange={e => setFormUsuario({...formUsuario, email: e.target.value})} className="w-full p-2.5 rounded-xl border text-xs bg-slate-800 border-slate-700 text-white" />
+                <input type="email" required value={formUsuario.email} onChange={e => setFormUsuario({...formUsuario, email: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Contraseña:</label>
-                <input type="password" required minLength={6} value={formUsuario.password} onChange={e => setFormUsuario({...formUsuario, password: e.target.value})} className="w-full p-2.5 rounded-xl border text-xs bg-slate-800 border-slate-700 text-white" />
+                <input type="password" required minLength={6} value={formUsuario.password} onChange={e => setFormUsuario({...formUsuario, password: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-1">Rol Permiso:</label>
-                  <select value={formUsuario.rol} onChange={e => setFormUsuario({...formUsuario, rol: e.target.value})} className="w-full p-2.5 rounded-xl border text-xs bg-slate-800 border-slate-700 text-white">
+                  <select value={formUsuario.rol} onChange={e => setFormUsuario({...formUsuario, rol: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}>
                     <option value="OPERADOR">OPERADOR</option>
                     <option value="ADMISION">ADMISIÓN</option>
                     <option value="ADMIN">ADMINISTRADOR</option>
@@ -295,7 +281,7 @@ export default function GestionUsuarios({ temaClaro }) {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-1">Servicio:</label>
-                  <select value={formUsuario.servicio} onChange={e => setFormUsuario({...formUsuario, servicio: e.target.value})} className="w-full p-2.5 rounded-xl border text-xs bg-slate-800 border-slate-700 text-white">
+                  <select value={formUsuario.servicio} onChange={e => setFormUsuario({...formUsuario, servicio: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}>
                     <option value="TODOS">TODOS</option>
                     <option value="EMERGENCIA">EMERGENCIA</option>
                     <option value="CONSULTA_EXTERNA">CONSULTA EXTERNA</option>
@@ -303,21 +289,20 @@ export default function GestionUsuarios({ temaClaro }) {
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-3">
-                <button type="button" onClick={() => setMostrarModalNuevo(false)} className="px-4 py-2 text-xs border border-slate-700 text-slate-400 rounded-xl">Cancelar</button>
-                <button type="submit" disabled={cargandoGuardado} className="px-5 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl">{cargandoGuardado ? 'Guardando...' : 'Guardar'}</button>
+                <button type="button" onClick={() => setMostrarModalNuevo(false)} className="px-4 py-2 text-xs border border-slate-700 text-slate-400 rounded-xl hover:bg-slate-800 transition">Cancelar</button>
+                <button type="submit" disabled={cargandoGuardado} className="px-5 py-2 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-bold rounded-xl shadow-lg transition">{cargandoGuardado ? 'Guardando...' : 'Guardar'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL EDITAR USUARIO (NUEVO) */}
       {mostrarModalEditar && usuarioEditando && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${temaClaro ? 'bg-white' : 'bg-slate-900 border-slate-800'}`}>
             <div className="flex justify-between pb-3 border-b border-slate-700/50 mb-4">
               <h3 className="text-lg font-bold text-blue-400 flex items-center gap-2"><Pencil className="w-5 h-5" /> Editar Datos del Usuario</h3>
-              <button onClick={() => setMostrarModalEditar(false)} className="text-slate-400"><X className="w-5 h-5" /></button>
+              <button onClick={() => setMostrarModalEditar(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             
             <form onSubmit={guardarEdicionUsuario} className="space-y-3">
@@ -366,7 +351,6 @@ export default function GestionUsuarios({ temaClaro }) {
                 </div>
               </div>
 
-              {/* Botón rápido para enviar correo de reseteo desde la edición */}
               <div className="pt-2">
                  <button
                     type="button"
@@ -378,8 +362,8 @@ export default function GestionUsuarios({ temaClaro }) {
               </div>
 
               <div className="flex justify-end gap-2 pt-3">
-                <button type="button" onClick={() => setMostrarModalEditar(false)} className="px-4 py-2 text-xs border border-slate-700 text-slate-400 rounded-xl">Cancelar</button>
-                <button type="submit" className="px-5 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl">Guardar Cambios</button>
+                <button type="button" onClick={() => setMostrarModalEditar(false)} className="px-4 py-2 text-xs border border-slate-700 text-slate-400 hover:bg-slate-800 rounded-xl transition">Cancelar</button>
+                <button type="submit" className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg transition">Guardar Cambios</button>
               </div>
             </form>
           </div>
