@@ -253,27 +253,44 @@ export default function App() {
 
   const agregarAPilaEspera = async (e) => {
     e.preventDefault();
-    if (!medicoParaCola || !nombrePaciente.trim()) return;
+    if (!medicoParaCola || !nombrePaciente.trim() || cargando) return;
+
+    const nombreLimpio = nombrePaciente.trim().toUpperCase();
+
+    // VALIDACIÓN PREVIA: Verificar si el paciente ya está registrado en cola para este médico
+    const yaExisteEnCola = listaEspera.some(
+      p => p.medico === medicoParaCola.Medico && p.paciente === nombreLimpio && p.estado === 'ESPERANDO'
+    );
+
+    if (yaExisteEnCola) {
+      alert(`El paciente "${nombreLimpio}" ya se encuentra registrado en la lista de espera de este médico.`);
+      return;
+    }
+
     try {
+      setCargando(true);
       await addDoc(collection(db, "lista_espera"), {
         medico: medicoParaCola.Medico,
-        paciente: nombrePaciente.trim().toUpperCase(),
+        paciente: nombreLimpio,
         fecha: obtenerFechaHoyLocal(),
         fechaIso: new Date().toISOString(),
         estado: 'ESPERANDO',
         servicio: 'EMERGENCIA'
       });
+
       setMedicoParaCola(null);
       setNombrePaciente('');
     } catch (err) {
       console.error("Error al encolar paciente:", err);
+    } finally {
+      setCargando(false);
     }
   };
 
-const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
-    if (!medObj || !pacienteEnCola) return;
+  const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
+    if (!medObj || !pacienteEnCola || cargando) return;
 
-    // SI EL MÉDICO NO TIENE CONSULTARIO/TÓPICO REGISTRADO, SOLICITAMOS INGRESARLO EN EL MODAL
+    // SI EL MÉDICO NO TIENE CONSULTORIO/TÓPICO REGISTRADO, SOLICITAMOS INGRESARLO EN EL MODAL
     if (!medObj.consultorioTopico || !medObj.consultorioTopico.trim()) {
       setMedicoParaLlamar(medObj);
       setNombrePaciente(pacienteEnCola.paciente);
@@ -283,6 +300,7 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     }
 
     try {
+      setCargando(true);
       const ahoraIso = new Date().toISOString();
       const batch = writeBatch(db);
 
@@ -309,6 +327,8 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
       );
     } catch (err) {
       console.error("Error llamando al siguiente en cola:", err);
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -485,7 +505,7 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
       setMedicoParaLlamar(medObj);
       setNombrePaciente(nombreDirecto.trim().toUpperCase());
       setConsultorioTopico(medObj.consultorioTopico || '');
-      setAccionPacienteAnterior('MARCAR_NO_RESPONDIO'); // Opción por defecto lógica
+      setAccionPacienteAnterior('MARCAR_NO_RESPONDIO');
       return;
     }
 
@@ -927,7 +947,7 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
 
   const confirmarLlamadaPaciente = async (e) => {
     e.preventDefault();
-    if (!medicoParaLlamar || !nombrePaciente.trim()) return;
+    if (!medicoParaLlamar || !nombrePaciente.trim() || cargando) return;
 
     const nombreLimpio = nombrePaciente.trim().toUpperCase();
     const consultorioLimpio = consultorioTopico.trim();
@@ -935,6 +955,7 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     const ahoraIso = new Date().toISOString();
 
     try {
+      setCargando(true);
       if (pacienteAnterior) {
         if (accionPacienteAnterior === 'FINALIZAR_ATENDIDO') {
           await registrarEnHistorialFirestore(medicoParaLlamar.Medico, pacienteAnterior, 'ATENDIDO', servicioActivo, ahoraIso, consultorioLimpio);
@@ -979,6 +1000,8 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
       setAccionPacienteAnterior('FINALIZAR_ATENDIDO');
     } catch (err) {
       console.error("Error al ingresar/llamar paciente:", err);
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -2107,10 +2130,11 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-cyan-600 text-white hover:bg-cyan-500 transition shadow-lg flex items-center gap-1.5"
+                  disabled={cargando}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-cyan-600 text-white hover:bg-cyan-500 transition shadow-lg flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" />
-                  Agregar a Pila
+                  {cargando ? 'Guardando...' : 'Agregar a Pila'}
                 </button>
               </div>
             </form>
@@ -2232,10 +2256,11 @@ const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-500 transition shadow-lg flex items-center gap-1.5"
+                  disabled={cargando}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-500 transition shadow-lg flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Clock className="w-4 h-4" />
-                  <span>Llamar Paciente</span>
+                  {cargando ? 'Llamando...' : 'Llamar Paciente'}
                 </button>
               </div>
             </form>
