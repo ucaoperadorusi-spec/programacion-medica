@@ -21,7 +21,7 @@ import {
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
   Timer, History, UserMinus, AlertCircle, Check, LogIn, Search, ChevronDown, ChevronUp,
-  Download, Stethoscope, Users, Key, Mail
+  Download, Stethoscope, Users, Key, Mail, ListPlus
 } from 'lucide-react';
 
 // ==========================================
@@ -33,7 +33,6 @@ function GestionUsuarios({ temaClaro }) {
   const [mostrarModalNuevo, setMostrarModalNuevo] = useState(false);
   const [cargandoGuardado, setCargandoGuardado] = useState(false);
   
-  // Estados para Edición
   const [mostrarModalEditar, setMostrarModalEditar] = useState(false);
   const [usuarioEditando, setUsuarioEditando] = useState(null);
 
@@ -49,7 +48,6 @@ function GestionUsuarios({ temaClaro }) {
     return () => unsubscribe();
   }, []);
 
-  // 1. CREAR NUEVO USUARIO
   const guardarUsuario = async (e) => {
     e.preventDefault();
     if (!formUsuario.email.trim() || !formUsuario.password.trim()) return;
@@ -90,7 +88,6 @@ function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 2. DESACTIVAR USUARIO (Borrado Lógico)
   const desactivarUsuario = async (id, email) => {
     if (!window.confirm(`¿Seguro que deseas DESACTIVAR al usuario ${email}? No podrá acceder al sistema.`)) return;
     try {
@@ -103,7 +100,6 @@ function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 3. REACTIVAR USUARIO
   const reactivarUsuario = async (id) => {
     try {
       await updateDoc(doc(db, "usuarios", id), { activo: true, estado: "activo" });
@@ -112,7 +108,6 @@ function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 4. GUARDAR EDICIÓN
   const guardarEdicionUsuario = async (e) => {
     e.preventDefault();
     if (!usuarioEditando) return;
@@ -130,7 +125,6 @@ function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  // 5. ENVIAR CORREO DE RESTABLECIMIENTO DE CONTRASEÑA
   const enviarCorreoRestablecimiento = async (email) => {
     if (!window.confirm(`¿Enviar enlace al correo ${email} para que el usuario asigne una nueva contraseña?`)) return;
     try {
@@ -151,7 +145,6 @@ function GestionUsuarios({ temaClaro }) {
     <div className={`p-6 rounded-3xl border shadow-xl ${
       temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
     }`}>
-      {/* CABECERA */}
       <div className="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-700/50 mb-6">
         <div>
           <h2 className="text-xl font-black text-cyan-400 flex items-center gap-2">
@@ -170,7 +163,6 @@ function GestionUsuarios({ temaClaro }) {
         </button>
       </div>
 
-      {/* BUSCADOR */}
       <div className="mb-4 relative max-w-md">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
         <input
@@ -184,7 +176,6 @@ function GestionUsuarios({ temaClaro }) {
         />
       </div>
 
-      {/* TABLA DE USUARIOS */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
@@ -231,7 +222,6 @@ function GestionUsuarios({ temaClaro }) {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex justify-end gap-1.5">
-                      {/* Botón Editar */}
                       <button
                         onClick={() => { setUsuarioEditando({ ...u }); setMostrarModalEditar(true); }}
                         className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition"
@@ -240,7 +230,6 @@ function GestionUsuarios({ temaClaro }) {
                         <Pencil className="w-4 h-4" />
                       </button>
 
-                      {/* Botón Restablecer Contraseña */}
                       <button
                         onClick={() => enviarCorreoRestablecimiento(u.email)}
                         className="p-1.5 text-amber-400 hover:bg-amber-500/20 rounded-lg transition"
@@ -249,7 +238,6 @@ function GestionUsuarios({ temaClaro }) {
                         <Key className="w-4 h-4" />
                       </button>
 
-                      {/* Botón Desactivar / Activar */}
                       {u.activo !== false ? (
                         <button
                           onClick={() => desactivarUsuario(u.id, u.email)}
@@ -276,7 +264,6 @@ function GestionUsuarios({ temaClaro }) {
         </table>
       </div>
 
-      {/* MODAL REGISTRAR NUEVO */}
       {mostrarModalNuevo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${temaClaro ? 'bg-white' : 'bg-slate-900 border-slate-800'}`}>
@@ -324,7 +311,6 @@ function GestionUsuarios({ temaClaro }) {
         </div>
       )}
 
-      {/* MODAL EDITAR USUARIO */}
       {mostrarModalEditar && usuarioEditando && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${temaClaro ? 'bg-white' : 'bg-slate-900 border-slate-800'}`}>
@@ -400,7 +386,6 @@ function GestionUsuarios({ temaClaro }) {
     </div>
   );
 }
-
 // ==========================================
 // COMPONENTE PRINCIPAL: APP
 // ==========================================
@@ -420,6 +405,10 @@ export default function App() {
   const [nombrePaciente, setNombrePaciente] = useState('');
   const [consultorioTopico, setConsultorioTopico] = useState('');
   const [accionPacienteAnterior, setAccionPacienteAnterior] = useState('FINALIZAR_ATENDIDO');
+
+  // Estados de Lista de Espera (Adminsión)
+  const [listaEspera, setListaEspera] = useState([]);
+  const [medicoParaCola, setMedicoParaCola] = useState(null);
 
   const [medicoParaEditarPaciente, setMedicoParaEditarPaciente] = useState(null);
   const [nuevoNombreEditado, setNuevoNombreEditado] = useState('');
@@ -469,7 +458,7 @@ export default function App() {
     LLAMANDO: { 
       label: "Llamando...", 
       badge: temaClaro ? "bg-cyan-600 text-white font-black shadow-md animate-pulse" : "bg-cyan-400 text-slate-950 font-black shadow-lg shadow-cyan-400/40 animate-pulse", 
-      cardColor: temaClaro ? "bg-cyan-50/80 border-2 border-cyan-400 shadow-xl ring-2 ring-cyan-400/20" : "bg-slate-900/95 border-2 border-cyan-400/80 shadow-2xl ring-2 ring-cyan-400/30 animate-pulse",
+      cardColor: temaClaro ? "bg-cyan-50/80 border-2 border-cyan-400 shadow-xl ring-2 ring-cyan-400/20" : "bg-slate-900/95 border-2 border-cyan-400/80 shadow-2xl ring-2 ring-cyan-400/30",
       buttonActive: temaClaro ? "bg-cyan-600 text-white border-cyan-600 shadow-md shadow-cyan-600/20 ring-1 ring-cyan-400" : "bg-cyan-400 text-slate-950 border-cyan-300 shadow-md shadow-cyan-400/30 ring-1 ring-cyan-200",
       icon: Bell 
     },
@@ -609,6 +598,69 @@ export default function App() {
       console.error("Error guardando en pacientes_medico:", err);
     }
   };
+
+  // ===============================
+  // GESTIÓN DE LISTA DE ESPERA 
+  // ===============================
+  useEffect(() => {
+    const q = collection(db, "lista_espera");
+    const unsub = onSnapshot(q, (snapshot) => {
+      const hoy = obtenerFechaHoyLocal();
+      const datos = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(d => d.fecha === hoy && d.estado === 'ESPERANDO');
+      setListaEspera(datos);
+    });
+    return () => unsub();
+  }, []);
+
+  const agregarAPilaEspera = async (e) => {
+    e.preventDefault();
+    if (!medicoParaCola || !nombrePaciente.trim()) return;
+    try {
+      await addDoc(collection(db, "lista_espera"), {
+        medico: medicoParaCola.Medico,
+        paciente: nombrePaciente.trim().toUpperCase(),
+        fecha: obtenerFechaHoyLocal(),
+        fechaIso: new Date().toISOString(),
+        estado: 'ESPERANDO',
+        servicio: 'EMERGENCIA'
+      });
+      setMedicoParaCola(null);
+      setNombrePaciente('');
+    } catch (err) {
+      console.error("Error al encolar paciente:", err);
+    }
+  };
+
+  const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
+    if (!medObj || !pacienteEnCola) return;
+    try {
+      const ahoraIso = new Date().toISOString();
+      const batch = writeBatch(db);
+
+      // Actualizar la cola
+      batch.update(doc(db, "lista_espera", pacienteEnCola.id), { estado: 'LLAMADO' });
+
+      // Actualizar la tarjeta médica para que lance el llamado de TV
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      ids.forEach(idDoc => {
+        const medRef = doc(db, "programacion_medica", idDoc);
+        batch.update(medRef, {
+          estado: 'LLAMANDO',
+          pacienteLlamado: pacienteEnCola.paciente,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+      await batch.commit();
+
+      // Registro de Auditoría
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteEnCola.paciente, 'LLAMADO', servicioActivo, ahoraIso, medObj.consultorioTopico);
+    } catch (err) {
+      console.error("Error llamando al siguiente en cola:", err);
+    }
+  };
+
 
   const obtenerInasistentesPendientes = (nombreMedico) => {
     const hoy = obtenerFechaHoyLocal();
@@ -784,12 +836,14 @@ export default function App() {
         batch.update(medRef, {
           estado: "LLAMANDO",
           pacienteLlamado: pacienteAVisar.trim().toUpperCase(),
-          estadoUltimoCambio: ahoraIso
+          estadoUltimoCambio: ahoraIso 
         });
       });
 
       await batch.commit();
-      await registrarEnHistorialFirestore(medObj.Medico, pacienteAVisar, 'RE_LLAMADO', servicioActivo, ahoraIso, medObj.consultorioTopico);
+      // SE ELIMINÓ: await registrarEnHistorialFirestore(..., 'RE_LLAMADO') 
+      // para no saturar el excel / reporte de auditoría.
+      
     } catch (err) {
       console.error("Error al re-llamar paciente:", err);
     }
@@ -1039,7 +1093,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // ESCUCHADOR DE SESIÓN CON BÚSQUEDA Y FALLBACK AUTOMÁTICO DE ROL
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
@@ -1836,7 +1889,7 @@ export default function App() {
       `}</style>
       
       {/* Header Superior */}
-      <header className={`px-8 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl z-20 border-b transition-colors ${
+      <header className={`px-8 py-4 flex flex-wrap justify-between items-center gap-4 shadow-xl z-30 border-b transition-colors ${
         temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
       }`}>
         <div className="flex items-center space-x-4">
@@ -1891,7 +1944,6 @@ export default function App() {
             <span>Emergencia 24H</span>
           </button>
 
-          {/* BOTÓN PESTAÑA GESTIÓN USUARIOS (Solo Visible para ADMIN) */}
           {rolUsuario === 'ADMIN' && (
             <button
               onClick={() => setVistaActiva(vistaActiva === 'USUARIOS' ? 'MONITOR' : 'USUARIOS')}
@@ -1909,7 +1961,6 @@ export default function App() {
 
         <div className="flex flex-wrap items-center gap-3">
           
-          {/* BOTÓN AUDITORÍA VISIBLE SOLO PARA ROLES AUTORIZADOS */}
           {puedeModificarEstados && (
             <button
               onClick={() => setMostrarModalHistorial(true)}
@@ -2063,7 +2114,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Marquee Informativo Dinámico */}
       {comunicado && vistaActiva === 'MONITOR' && (
         <div className={`py-2 px-4 border-b flex items-center gap-3 overflow-hidden ${
           temaClaro ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-blue-950/40 border-blue-900/50 text-blue-300'
@@ -2077,7 +2127,7 @@ export default function App() {
         </div>
       )}
 
-      {/* VISTA PRINCIPAL O VISTA GESTIÓN DE USUARIOS */}
+      {/* VISTA PRINCIPAL */}
       <main ref={mainScrollRef} className="flex-1 p-8 overflow-y-auto relative">
         {vistaActiva === 'USUARIOS' ? (
           <GestionUsuarios temaClaro={temaClaro} />
@@ -2130,13 +2180,13 @@ export default function App() {
                     </span>
                   </div>
 
-                  {/* Tarjetas de los Médicos */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {[...agrupadoPorModulo[moduloNombre]]
                       .sort((a, b) => {
                         const estadoA = calcularEstadoInteligente(a, estaEnTurno(a.horarios));
                         const estadoB = calcularEstadoInteligente(b, estaEnTurno(b.horarios));
 
+                        // Prioridad 1 es LLAMANDO (Sube las tarjetas al inicio del panel)
                         const prioridad = {
                           "LLAMANDO": 1,
                           "CONSULTA": 2,
@@ -2157,11 +2207,22 @@ export default function App() {
                         const tiempoTranscurrido = obtenerTiempoTranscurrido(med.horaIngresoConsulta || med.estadoUltimoCambio);
 
                         const inasistentesPendientes = obtenerInasistentesPendientes(med.Medico);
+                        
+                        // Lista de pacientes esperando a este doctor (Solo Emergencia)
+                        const enCola = listaEspera
+                          .filter(p => p.medico === med.Medico)
+                          .sort((a,b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime());
+
+                        // Efecto Zoom (scale) si está Llamando
+                        const isLlamando = estadoClave === "LLAMANDO";
+                        const animacionLlamado = isLlamando 
+                          ? (temaClaro ? "scale-105 z-20 shadow-2xl ring-4 ring-cyan-500 shadow-cyan-500/40" : "scale-105 z-20 shadow-2xl ring-4 ring-rose-500 shadow-rose-500/50") 
+                          : "hover:-translate-y-1 z-0";
 
                         return (
                           <div 
                             key={mIdx} 
-                            className={`p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 w-full ${configEstado.cardColor}`}
+                            className={`p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 w-full relative ${animacionLlamado} ${configEstado.cardColor}`}
                           >
                             <div>
                               {/* Cabecera Médico */}
@@ -2185,7 +2246,7 @@ export default function App() {
                                   )}
 
                                   {/* BLOQUE ROJO "LLAMANDO A:" */}
-                                  {servicioActivo === 'EMERGENCIA' && estadoClave === "LLAMANDO" && med.pacienteLlamado && (
+                                  {servicioActivo === 'EMERGENCIA' && isLlamando && med.pacienteLlamado && (
                                     <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                                       temaClaro 
                                         ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
@@ -2320,20 +2381,80 @@ export default function App() {
                                     </div>
                                   )}
 
-                                  {/* BOTÓN INGRESAR / LLAMAR PACIENTE */}
-                                  {servicioActivo === 'EMERGENCIA' && puedeModificarEstados && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
+                                  {/* BOTONES Y LISTA DE ESPERA - SOLO EMERGENCIA */}
+                                  {servicioActivo === 'EMERGENCIA' && puedeModificarEstados && (
+                                    <div className="mt-4 pt-3 border-t border-slate-700/40 space-y-2">
+                                      
+                                      {/* Mostrar pacientes en cola */}
+                                      {enCola.length > 0 && !modoTvActivo && (
+                                        <div className={`p-2.5 rounded-xl border mb-3 text-[11px] ${
+                                          temaClaro ? 'bg-cyan-50 border-cyan-200' : 'bg-slate-900/70 border-slate-700/60'
+                                        }`}>
+                                          <p className={`font-bold mb-1.5 flex items-center gap-1 ${temaClaro ? 'text-cyan-800' : 'text-slate-400'}`}>
+                                            <ListPlus className="w-3.5 h-3.5" />
+                                            En Cola de Espera ({enCola.length}):
+                                          </p>
+                                          <p className={`font-black truncate ${temaClaro ? 'text-cyan-600' : 'text-cyan-400'}`}>1. {enCola[0].paciente}</p>
+                                          {enCola.length > 1 && <p className={`truncate mt-0.5 ${temaClaro ? 'text-slate-500' : 'text-slate-500'}`}>2. {enCola[1].paciente}</p>}
+                                        </div>
+                                      )}
+
+                                      {/* ADMISIÓN: Solo puede encolar */}
+                                      {rolUsuario === 'ADMISION' && (
+                                        <button
+                                          type="button"
+                                          onClick={() => { setMedicoParaCola(med); setNombrePaciente(''); }}
+                                          className="w-full py-2 px-3 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                                        >
+                                          <UserPlus className="w-4 h-4" />
+                                          <span>Agregar a Lista de Espera</span>
+                                        </button>
+                                      )}
+
+                                      {/* MÉDICO / ADMIN: Pueden llamar si están libres */}
+                                      {rolUsuario !== 'ADMISION' && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
+                                        <div className="flex gap-2">
+                                          {enCola.length > 0 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => llamarSiguienteCola(med, enCola[0])}
+                                              className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg flex items-center justify-center gap-1"
+                                            >
+                                              <CheckCircle className="w-4 h-4" />
+                                              <span>Siguiente ({enCola.length})</span>
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setMedicoParaLlamar(med);
+                                              setNombrePaciente('');
+                                              setConsultorioTopico(med.consultorioTopico || '');
+                                            }}
+                                            className={`${enCola.length > 0 ? 'flex-1 bg-slate-700 hover:bg-slate-600 text-white' : 'w-full bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/40'} py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1`}
+                                          >
+                                            <UserPlus className="w-4 h-4" />
+                                            <span>{enCola.length > 0 ? 'Manual' : 'Ingresar / Llamar Manual'}</span>
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* BOTÓN INGRESAR / LLAMAR NORMAL PARA CONSULTA EXTERNA */}
+                                  {servicioActivo === 'CONSULTA_EXTERNA' && puedeModificarEstados && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                                     <div className="mt-3">
                                       <button
                                         type="button"
                                         onClick={() => {
                                           setMedicoParaLlamar(med);
                                           setNombrePaciente('');
-                                          setConsultorioTopico(med.consultorioTopico || '');
+                                          setConsultorioTopico('');
                                         }}
-                                        className="w-full py-2 px-3 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-400 border border-cyan-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                                        className="w-full py-2 px-3 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
                                       >
                                         <UserPlus className="w-4 h-4" />
-                                        <span>{rolUsuario === 'ADMISION' ? 'Ingresar Paciente' : 'Ingresar / Llamar Paciente'}</span>
+                                        <span>Ingresar / Llamar Paciente</span>
                                       </button>
                                     </div>
                                   )}
@@ -2813,7 +2934,63 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL INGRESAR / LLAMAR PACIENTE */}
+      {/* MODAL COLA DE ESPERA (ADMISIÓN) */}
+      {medicoParaCola && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
+            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+          }`}>
+            <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
+              <h3 className="text-lg font-bold flex items-center gap-2 text-cyan-400">
+                <ListPlus className="w-5 h-5 text-cyan-400" />
+                Agregar a Cola de Espera
+              </h3>
+              <button onClick={() => setMedicoParaCola(null)} className="text-slate-400 hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <form onSubmit={agregarAPilaEspera} autoComplete="off" className="space-y-4">
+              <div>
+                <p className="text-xs text-slate-400 mb-2">
+                  Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaCola.Medico}</strong>
+                </p>
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Apellidos y Nombres del Paciente:</label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={nombrePaciente}
+                  onChange={(e) => setNombrePaciente(e.target.value)}
+                  placeholder="EJ. ANDY SORIANO"
+                  required
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-bold uppercase focus:outline-none transition mb-3 ${
+                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                  }`}
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMedicoParaCola(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-cyan-600 text-white hover:bg-cyan-500 transition shadow-lg flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  Agregar a Pila
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL INGRESAR / LLAMAR PACIENTE MANUAL */}
       {medicoParaLlamar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2822,7 +2999,7 @@ export default function App() {
             <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
               <h3 className="text-lg font-bold flex items-center gap-2 text-rose-500">
                 <Bell className="w-5 h-5 text-rose-500 animate-bounce" />
-                {rolUsuario === 'ADMISION' ? 'Ingresar Paciente a Médico' : 'Ingresar / Llamar Paciente a Pantalla TV'}
+                Llamado Manual a Pantalla TV
               </h3>
               <button onClick={() => setMedicoParaLlamar(null)} className="text-slate-400 hover:text-slate-200">
                 <X className="w-5 h-5" />
@@ -2929,8 +3106,8 @@ export default function App() {
                   type="submit"
                   className="px-5 py-2 rounded-xl text-xs font-bold bg-rose-600 text-white hover:bg-rose-500 transition shadow-lg flex items-center gap-1.5"
                 >
-                  <Check className="w-4 h-4" />
-                  <span>{rolUsuario === 'ADMISION' ? 'Guardar e Ingresar Paciente' : 'Llamar Paciente'}</span>
+                  <Bell className="w-4 h-4" />
+                  <span>Llamar Paciente</span>
                 </button>
               </div>
             </form>
@@ -2938,7 +3115,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODALES ADICIONALES */}
+      {/* MODALES ADICIONALES (Editar, Nuevo, Subir, etc.) */}
       {medicoParaEditarPaciente && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -3417,7 +3594,6 @@ export default function App() {
               </div>
             </form>
 
-            {/* BOTÓN DE GOOGLE */}
             <div className="mt-4 pt-4 border-t border-slate-700/50 text-center">
               <button
                 type="button"
@@ -3589,7 +3765,6 @@ export default function App() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
