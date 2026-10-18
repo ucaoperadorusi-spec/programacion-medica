@@ -270,8 +270,18 @@ export default function App() {
     }
   };
 
-  const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
+const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     if (!medObj || !pacienteEnCola) return;
+
+    // SI EL MÉDICO NO TIENE CONSULTARIO/TÓPICO REGISTRADO, SOLICITAMOS INGRESARLO EN EL MODAL
+    if (!medObj.consultorioTopico || !medObj.consultorioTopico.trim()) {
+      setMedicoParaLlamar(medObj);
+      setNombrePaciente(pacienteEnCola.paciente);
+      setConsultorioTopico('');
+      setAccionPacienteAnterior('FINALIZAR_ATENDIDO');
+      return;
+    }
+
     try {
       const ahoraIso = new Date().toISOString();
       const batch = writeBatch(db);
@@ -289,7 +299,14 @@ export default function App() {
       });
       await batch.commit();
 
-      await registrarEnHistorialFirestore(medObj.Medico, pacienteEnCola.paciente, 'LLAMADO', servicioActivo, ahoraIso, medObj.consultorioTopico);
+      await registrarEnHistorialFirestore(
+        medObj.Medico, 
+        pacienteEnCola.paciente, 
+        'LLAMADO', 
+        servicioActivo, 
+        ahoraIso, 
+        medObj.consultorioTopico
+      );
     } catch (err) {
       console.error("Error llamando al siguiente en cola:", err);
     }
