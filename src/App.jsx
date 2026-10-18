@@ -8,7 +8,8 @@ import {
   getAuth as getAuthSecondary,
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { 
   collection, onSnapshot, doc, getDoc, getDocs, writeBatch, setDoc, addDoc, updateDoc, deleteDoc 
@@ -20,7 +21,7 @@ import {
   Coffee, UserX, Bell, UserPlus, RefreshCw, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, CalendarClock, Shield, Pencil, Plus, Siren,
   Timer, History, UserMinus, AlertCircle, Check, LogIn, Search, ChevronDown, ChevronUp,
-  Download, Stethoscope, Users
+  Download, Stethoscope, Users, Key, Mail
 } from 'lucide-react';
 
 // ==========================================
@@ -31,13 +32,13 @@ function GestionUsuarios({ temaClaro }) {
   const [busqueda, setBusqueda] = useState('');
   const [mostrarModalNuevo, setMostrarModalNuevo] = useState(false);
   const [cargandoGuardado, setCargandoGuardado] = useState(false);
+  
+  // Estados para Edición
+  const [mostrarModalEditar, setMostrarModalEditar] = useState(false);
+  const [usuarioEditando, setUsuarioEditando] = useState(null);
+
   const [formUsuario, setFormUsuario] = useState({
-    nombre: '',
-    email: '',
-    password: '',
-    rol: 'OPERADOR',
-    servicio: 'TODOS',
-    activo: true
+    nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS', activo: true
   });
 
   useEffect(() => {
@@ -48,10 +49,10 @@ function GestionUsuarios({ temaClaro }) {
     return () => unsubscribe();
   }, []);
 
+  // 1. CREAR NUEVO USUARIO
   const guardarUsuario = async (e) => {
     e.preventDefault();
     if (!formUsuario.email.trim() || !formUsuario.password.trim()) return;
-
     if (formUsuario.password.length < 6) {
       alert("La contraseña debe tener al menos 6 caracteres.");
       return;
@@ -60,27 +61,25 @@ function GestionUsuarios({ temaClaro }) {
     setCargandoGuardado(true);
     try {
       const emailClean = formUsuario.email.trim().toLowerCase();
-
-      // 1. Crear usuario en Firebase Auth usando aplicación en segundo plano
       const secondaryApp = initializeApp(firebaseConfig, "SecondaryAuthApp_" + Date.now());
       const secondaryAuth = getAuthSecondary(secondaryApp);
+      
       await createUserWithEmailAndPassword(secondaryAuth, emailClean, formUsuario.password);
 
-      // 2. Guardar perfil y permisos en Firestore
       await setDoc(doc(db, "usuarios", emailClean), {
         nombre: formUsuario.nombre.trim(),
         email: emailClean,
         rol: formUsuario.rol,
         servicio: formUsuario.servicio,
         activo: formUsuario.activo,
+        estado: "activo",
         fechaCreacion: new Date().toISOString()
       });
 
       setMostrarModalNuevo(false);
       setFormUsuario({ nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS', activo: true });
-      alert(`¡Usuario ${emailClean} registrado exitosamente en Authentication y Firestore!`);
+      alert(`¡Usuario ${emailClean} registrado exitosamente!`);
     } catch (err) {
-      console.error("Error al guardar usuario:", err);
       if (err.code === 'auth/email-already-in-use') {
         alert("El correo ya se encuentra registrado en el sistema.");
       } else {
@@ -91,20 +90,55 @@ function GestionUsuarios({ temaClaro }) {
     }
   };
 
-  const cambiarEstadoUsuario = async (id, estadoActual) => {
+  // 2. DESACTIVAR USUARIO (Borrado Lógico)
+  const desactivarUsuario = async (id, email) => {
+    if (!window.confirm(`¿Seguro que deseas DESACTIVAR al usuario ${email}? No podrá acceder al sistema.`)) return;
     try {
-      await updateDoc(doc(db, "usuarios", id), { activo: !estadoActual });
+      await updateDoc(doc(db, "usuarios", id), { 
+        activo: false, 
+        estado: "inactivo" 
+      });
     } catch (err) {
-      console.error("Error al cambiar estado:", err);
+      console.error("Error al desactivar:", err);
     }
   };
 
-  const eliminarUsuario = async (id) => {
-    if (!window.confirm("¿Seguro que deseas eliminar este usuario de la base de datos?")) return;
+  // 3. REACTIVAR USUARIO
+  const reactivarUsuario = async (id) => {
     try {
-      await deleteDoc(doc(db, "usuarios", id));
+      await updateDoc(doc(db, "usuarios", id), { activo: true, estado: "activo" });
     } catch (err) {
-      console.error("Error al eliminar usuario:", err);
+      console.error("Error al reactivar:", err);
+    }
+  };
+
+  // 4. GUARDAR EDICIÓN
+  const guardarEdicionUsuario = async (e) => {
+    e.preventDefault();
+    if (!usuarioEditando) return;
+
+    try {
+      await updateDoc(doc(db, "usuarios", usuarioEditando.id), {
+        nombre: usuarioEditando.nombre,
+        rol: usuarioEditando.rol,
+        servicio: usuarioEditando.servicio
+      });
+      setMostrarModalEditar(false);
+      alert("Datos del usuario actualizados correctamente.");
+    } catch (err) {
+      console.error("Error al editar:", err);
+    }
+  };
+
+  // 5. ENVIAR CORREO DE RESTABLECIMIENTO DE CONTRASEÑA
+  const enviarCorreoRestablecimiento = async (email) => {
+    if (!window.confirm(`¿Enviar enlace al correo ${email} para que el usuario asigne una nueva contraseña?`)) return;
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert(`Correo enviado a ${email}. El usuario debe revisar su bandeja de entrada para cambiar su clave.`);
+    } catch (err) {
+      console.error("Error enviando correo:", err);
+      alert("Hubo un error al intentar enviar el correo. Verifique que la cuenta exista en Authentication.");
     }
   };
 
@@ -117,13 +151,14 @@ function GestionUsuarios({ temaClaro }) {
     <div className={`p-6 rounded-3xl border shadow-xl ${
       temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
     }`}>
+      {/* CABECERA */}
       <div className="flex flex-wrap justify-between items-center gap-4 pb-4 border-b border-slate-700/50 mb-6">
         <div>
           <h2 className="text-xl font-black text-cyan-400 flex items-center gap-2">
             <Shield className="w-6 h-6 text-cyan-400" />
             Gestión de Usuarios y Accesos
           </h2>
-          <p className="text-xs text-slate-400">Administración de credenciales, roles y áreas autorizadas</p>
+          <p className="text-xs text-slate-400">Administración de credenciales, edición y bloqueos</p>
         </div>
 
         <button
@@ -135,6 +170,7 @@ function GestionUsuarios({ temaClaro }) {
         </button>
       </div>
 
+      {/* BUSCADOR */}
       <div className="mb-4 relative max-w-md">
         <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
         <input
@@ -143,19 +179,19 @@ function GestionUsuarios({ temaClaro }) {
           onChange={(e) => setBusqueda(e.target.value)}
           placeholder="Buscar por nombre o correo..."
           className={`w-full pl-9 pr-4 py-2 rounded-xl text-xs border focus:outline-none transition ${
-            temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+            temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'
           }`}
         />
       </div>
 
+      {/* TABLA DE USUARIOS */}
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs border-collapse">
           <thead>
             <tr className={`border-b ${temaClaro ? 'border-slate-200 text-slate-600' : 'border-slate-800 text-slate-400'}`}>
               <th className="py-3 px-4">Usuario / Nombre</th>
               <th className="py-3 px-4">Correo Electrónico</th>
-              <th className="py-3 px-4">Rol Asignado</th>
-              <th className="py-3 px-4">Servicio Permitido</th>
+              <th className="py-3 px-4">Rol / Servicio</th>
               <th className="py-3 px-4">Estado</th>
               <th className="py-3 px-4 text-right">Acciones</th>
             </tr>
@@ -163,47 +199,75 @@ function GestionUsuarios({ temaClaro }) {
           <tbody>
             {usuariosFiltrados.length === 0 ? (
               <tr>
-                <td colSpan="6" className="text-center py-8 text-slate-400 font-medium">
-                  No hay usuarios registrados en la base de datos.
+                <td colSpan="5" className="text-center py-8 text-slate-400 font-medium">
+                  No hay usuarios registrados.
                 </td>
               </tr>
             ) : (
               usuariosFiltrados.map((u) => (
                 <tr key={u.id} className={`border-b transition ${
-                  temaClaro ? 'border-slate-100 hover:bg-slate-50' : 'border-slate-800/60 hover:bg-slate-800/40'
-                }`}>
+                  u.activo === false ? 'opacity-50 grayscale' : ''
+                } ${temaClaro ? 'border-slate-100 hover:bg-slate-50' : 'border-slate-800/60 hover:bg-slate-800/40'}`}>
                   <td className="py-3 px-4 font-bold">{u.nombre || 'Sin Nombre'}</td>
                   <td className="py-3 px-4 font-mono text-slate-400">{u.email}</td>
                   <td className="py-3 px-4">
-                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black ${
-                      u.rol === 'ADMIN' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' :
-                      u.rol === 'ADMISION' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' :
-                      'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                    }`}>
-                      {u.rol}
-                    </span>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span className="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-400 font-bold border border-blue-500/30 text-[10px]">
+                        {u.rol}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-bold">{u.servicio}</span>
+                    </div>
                   </td>
-                  <td className="py-3 px-4 font-mono">{u.servicio || 'TODOS'}</td>
                   <td className="py-3 px-4">
-                    <button
-                      onClick={() => cambiarEstadoUsuario(u.id, u.activo)}
-                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition ${
-                        u.activo !== false 
-                          ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500' 
-                          : 'bg-rose-600/30 text-rose-300 border border-rose-500'
-                      }`}
-                    >
-                      {u.activo !== false ? 'ACTIVO' : 'INACTIVO'}
-                    </button>
+                    {u.activo !== false ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-600/30 text-emerald-300 border border-emerald-500">
+                        ACTIVO
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-600/30 text-rose-300 border border-rose-500">
+                        INACTIVO
+                      </span>
+                    )}
                   </td>
-                  <td className="py-3 px-4 text-right space-x-2">
-                    <button
-                      onClick={() => eliminarUsuario(u.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-400 rounded-lg transition"
-                      title="Eliminar usuario"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <td className="py-3 px-4 text-right">
+                    <div className="flex justify-end gap-1.5">
+                      {/* Botón Editar */}
+                      <button
+                        onClick={() => { setUsuarioEditando({ ...u }); setMostrarModalEditar(true); }}
+                        className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition"
+                        title="Editar datos del usuario"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+
+                      {/* Botón Restablecer Contraseña */}
+                      <button
+                        onClick={() => enviarCorreoRestablecimiento(u.email)}
+                        className="p-1.5 text-amber-400 hover:bg-amber-500/20 rounded-lg transition"
+                        title="Enviar correo para cambiar clave"
+                      >
+                        <Key className="w-4 h-4" />
+                      </button>
+
+                      {/* Botón Desactivar / Activar */}
+                      {u.activo !== false ? (
+                        <button
+                          onClick={() => desactivarUsuario(u.id, u.email)}
+                          className="p-1.5 text-rose-400 hover:bg-rose-500/20 rounded-lg transition"
+                          title="Desactivar y bloquear acceso"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => reactivarUsuario(u.id)}
+                          className="p-1.5 text-emerald-400 hover:bg-emerald-500/20 rounded-lg transition"
+                          title="Volver a activar usuario"
+                        >
+                          <UserPlus className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -212,88 +276,101 @@ function GestionUsuarios({ temaClaro }) {
         </table>
       </div>
 
+      {/* MODAL REGISTRAR NUEVO */}
       {mostrarModalNuevo && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${
-            temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
-          }`}>
-            <div className="flex justify-between items-center pb-3 border-b border-slate-700/50 mb-4">
-              <h3 className="text-lg font-bold flex items-center gap-2 text-cyan-400">
-                <UserPlus className="w-5 h-5" /> Registrar Nuevo Usuario
-              </h3>
-              <button onClick={() => setMostrarModalNuevo(false)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+          <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${temaClaro ? 'bg-white' : 'bg-slate-900 border-slate-800'}`}>
+            <div className="flex justify-between pb-3 border-b border-slate-700/50 mb-4">
+              <h3 className="text-lg font-bold text-cyan-400 flex items-center gap-2"><UserPlus className="w-5 h-5" /> Registrar Usuario</h3>
+              <button onClick={() => setMostrarModalNuevo(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-
             <form onSubmit={guardarUsuario} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Nombre Completo:</label>
-                <input
-                  type="text"
-                  required
-                  value={formUsuario.nombre}
-                  onChange={e => setFormUsuario({...formUsuario, nombre: e.target.value})}
-                  placeholder="Ej. Juan Pérez"
-                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
-                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
-                />
+                <input type="text" required value={formUsuario.nombre} onChange={e => setFormUsuario({...formUsuario, nombre: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} />
               </div>
-
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Correo Electrónico:</label>
-                <input
-                  type="email"
-                  required
-                  value={formUsuario.email}
-                  onChange={e => setFormUsuario({...formUsuario, email: e.target.value})}
-                  placeholder="usuario@essalud.gob.pe"
-                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
-                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
+                <input type="email" required value={formUsuario.email} onChange={e => setFormUsuario({...formUsuario, email: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">Contraseña:</label>
+                <input type="password" required minLength={6} value={formUsuario.password} onChange={e => setFormUsuario({...formUsuario, password: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Rol Permiso:</label>
+                  <select value={formUsuario.rol} onChange={e => setFormUsuario({...formUsuario, rol: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}>
+                    <option value="OPERADOR">OPERADOR</option>
+                    <option value="ADMISION">ADMISIÓN</option>
+                    <option value="ADMIN">ADMINISTRADOR</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Servicio:</label>
+                  <select value={formUsuario.servicio} onChange={e => setFormUsuario({...formUsuario, servicio: e.target.value})} className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}>
+                    <option value="TODOS">TODOS</option>
+                    <option value="EMERGENCIA">EMERGENCIA</option>
+                    <option value="CONSULTA_EXTERNA">CONSULTA EXTERNA</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-3">
+                <button type="button" onClick={() => setMostrarModalNuevo(false)} className="px-4 py-2 text-xs border border-slate-700 text-slate-400 rounded-xl hover:bg-slate-800 transition">Cancelar</button>
+                <button type="submit" disabled={cargandoGuardado} className="px-5 py-2 bg-emerald-600 text-white hover:bg-emerald-500 text-xs font-bold rounded-xl shadow-lg transition">{cargandoGuardado ? 'Guardando...' : 'Guardar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR USUARIO */}
+      {mostrarModalEditar && usuarioEditando && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className={`w-full max-w-md rounded-3xl p-6 border shadow-2xl ${temaClaro ? 'bg-white' : 'bg-slate-900 border-slate-800'}`}>
+            <div className="flex justify-between pb-3 border-b border-slate-700/50 mb-4">
+              <h3 className="text-lg font-bold text-blue-400 flex items-center gap-2"><Pencil className="w-5 h-5" /> Editar Datos del Usuario</h3>
+              <button onClick={() => setMostrarModalEditar(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            
+            <form onSubmit={guardarEdicionUsuario} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-400 mb-1">Nombre Completo:</label>
+                <input 
+                  type="text" required 
+                  value={usuarioEditando.nombre} 
+                  onChange={e => setUsuarioEditando({...usuarioEditando, nombre: e.target.value})} 
+                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`} 
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-400 mb-1">Contraseña de Acceso:</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={formUsuario.password}
-                  onChange={e => setFormUsuario({...formUsuario, password: e.target.value})}
-                  placeholder="Mínimo 6 caracteres"
-                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
-                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
+                <label className="block text-xs font-bold text-slate-400 mb-1">Correo (No modificable):</label>
+                <input 
+                  type="email" disabled value={usuarioEditando.email} 
+                  className="w-full p-2.5 rounded-xl border text-xs bg-slate-800/50 border-slate-700 text-slate-500 cursor-not-allowed" 
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-1">Rol Permiso:</label>
-                  <select
-                    value={formUsuario.rol}
-                    onChange={e => setFormUsuario({...formUsuario, rol: e.target.value})}
-                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
-                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
-                    }`}
+                  <select 
+                    value={usuarioEditando.rol} 
+                    onChange={e => setUsuarioEditando({...usuarioEditando, rol: e.target.value})} 
+                    className={`w-full p-2.5 rounded-xl border text-xs ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
                   >
                     <option value="OPERADOR">OPERADOR</option>
                     <option value="ADMISION">ADMISIÓN</option>
                     <option value="ADMIN">ADMINISTRADOR</option>
                   </select>
                 </div>
-
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 mb-1">Servicio Destino:</label>
-                  <select
-                    value={formUsuario.servicio}
-                    onChange={e => setFormUsuario({...formUsuario, servicio: e.target.value})}
-                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
-                      temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
-                    }`}
+                  <label className="block text-xs font-bold text-slate-400 mb-1">Servicio:</label>
+                  <select 
+                    value={usuarioEditando.servicio} 
+                    onChange={e => setUsuarioEditando({...usuarioEditando, servicio: e.target.value})} 
+                    className={`w-full p-2.5 rounded-xl border text-xs ${temaClaro ? 'bg-slate-50 border-slate-300' : 'bg-slate-800 border-slate-700 text-white'}`}
                   >
                     <option value="TODOS">TODOS</option>
                     <option value="EMERGENCIA">EMERGENCIA</option>
@@ -302,21 +379,19 @@ function GestionUsuarios({ temaClaro }) {
                 </div>
               </div>
 
+              <div className="pt-2">
+                 <button
+                    type="button"
+                    onClick={() => enviarCorreoRestablecimiento(usuarioEditando.email)}
+                    className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition"
+                 >
+                   <Mail className="w-4 h-4" /> Enviar enlace para cambiar contraseña
+                 </button>
+              </div>
+
               <div className="flex justify-end gap-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setMostrarModalNuevo(false)}
-                  className="px-4 py-2 text-xs border border-slate-700 text-slate-400 rounded-xl hover:bg-slate-800"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={cargandoGuardado}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg"
-                >
-                  {cargandoGuardado ? 'Guardando...' : 'Guardar y Crear'}
-                </button>
+                <button type="button" onClick={() => setMostrarModalEditar(false)} className="px-4 py-2 text-xs border border-slate-700 text-slate-400 hover:bg-slate-800 rounded-xl transition">Cancelar</button>
+                <button type="submit" className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg transition">Guardar Cambios</button>
               </div>
             </form>
           </div>
@@ -1373,7 +1448,6 @@ export default function App() {
     return keyFound ? row[keyFound] : null;
   };
 
-  // INICIO DE SESIÓN CON CORREO Y CONTRASEÑA
   const handleLogin = async (e) => {
     e.preventDefault();
     setErrorPin(false);
@@ -1383,6 +1457,18 @@ export default function App() {
       const cleanPassword = passwordInput.trim();
 
       await signInWithEmailAndPassword(auth, cleanEmail, cleanPassword);
+      
+      const userDocRef = doc(db, "usuarios", cleanEmail);
+      const userSnap = await getDoc(userDocRef);
+
+      if (userSnap.exists()) {
+        const data = userSnap.data();
+        if (data.activo === false || data.estado === "inactivo") {
+          await signOut(auth);
+          alert("Acceso denegado: Tu cuenta se encuentra inactiva. Contacta al administrador.");
+          return;
+        }
+      }
 
       setMostrarModalLogin(false);
       setEmailInput('');
@@ -1393,12 +1479,9 @@ export default function App() {
     }
   };
 
-  // INICIO DE SESIÓN CON GOOGLE CON AUTOREGISTRO EN FIRESTORE
   const loginConGoogle = async () => {
     const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({
-      prompt: 'select_account'
-    });
+    provider.setCustomParameters({ prompt: 'select_account' });
 
     try {
       setErrorPin(false);
@@ -1406,11 +1489,9 @@ export default function App() {
       const user = result.user;
       const emailClean = user.email.toLowerCase().trim();
 
-      // Consultar perfil en Firestore
       const userDocRef = doc(db, "usuarios", emailClean);
       const userSnap = await getDoc(userDocRef);
 
-      // Si es la primera vez que ingresa, crear su perfil en Firestore
       if (!userSnap.exists()) {
         const esAdminPrincipal = emailClean === 'uca.operadorusi@essalud.gob.pe';
         await setDoc(userDocRef, {
@@ -1419,14 +1500,21 @@ export default function App() {
           rol: esAdminPrincipal ? 'ADMIN' : 'OPERADOR',
           servicio: 'TODOS',
           activo: true,
+          estado: 'activo',
           fechaCreacion: new Date().toISOString()
         });
+      } else {
+        const data = userSnap.data();
+        if (data.activo === false || data.estado === "inactivo") {
+          await signOut(auth);
+          alert("Acceso denegado: Tu cuenta se encuentra inactiva. Contacta al administrador.");
+          return;
+        }
       }
 
-      console.log("Usuario autenticado exitosamente con Google:", emailClean);
       setMostrarModalLogin(false);
     } catch (error) {
-      console.error("Error al iniciar sesión con Google:", error.code, error.message);
+      console.error("Error al iniciar sesión con Google:", error);
       setErrorPin(true);
     }
   };
@@ -3309,7 +3397,7 @@ export default function App() {
               </div>
 
               {errorPin && (
-                <p className="text-red-400 text-xs text-center font-semibold">Credenciales no válidas.</p>
+                <p className="text-red-400 text-xs text-center font-semibold">Credenciales no válidas o cuenta inactiva.</p>
               )}
 
               <div className="flex justify-end gap-2 pt-2">
