@@ -1,9 +1,9 @@
+import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
-import { db, auth, firebaseConfig } from './firebase'
-
-// Importante: Reutilizamos las credenciales de tu archivo firebase.js para crear la app secundaria
-import { firebaseConfig } from './firebase'; 
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { Shield, UserPlus, Search, Trash2, X } from 'lucide-react';
+import { db, firebaseConfig } from './firebase';
 
 function GestionUsuarios({ temaClaro }) {
   const [usuarios, setUsuarios] = useState([]);
