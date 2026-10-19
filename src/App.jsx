@@ -17,7 +17,7 @@ import {
   UserPlus, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, Shield, Pencil, Plus, Siren,
   History, UserMinus, AlertCircle, Check, Search, ChevronDown, ChevronUp,
-  Download, Users, ListPlus
+  Download, Users, ListPlus, LogIn
 } from 'lucide-react';
 
 import GestionUsuarios from './GestionUsuarios';
@@ -349,7 +349,7 @@ export default function App() {
     );
 
     const cronologico = [...historialMedicoHoy].sort(
-      (a, b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime()
+      (a, b) => new Date(a.fechaIso || 0).getTime() - new Date(b.fechaIso || 0).getTime()
     );
 
     const mapaPacientes = new Map();
@@ -582,7 +582,7 @@ export default function App() {
     const q = collection(db, "historial_llamados");
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      datos.sort((a, b) => new Date(b.fechaIso).getTime() - new Date(a.fechaIso).getTime());
+      datos.sort((a, b) => new Date(b.fechaIso || 0).getTime() - new Date(a.fechaIso || 0).getTime());
       setHistorialLlamados(datos);
     });
     return () => unsubscribe();
@@ -591,8 +591,10 @@ export default function App() {
   const historialAgrupadoAuditoria = React.useMemo(() => {
     const mapaGrupos = new Map();
 
+    if (!Array.isArray(historialLlamados)) return [];
+
     const ordenados = [...historialLlamados].sort(
-      (a, b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime()
+      (a, b) => new Date(a.fechaIso || 0).getTime() - new Date(b.fechaIso || 0).getTime()
     );
 
     ordenados.forEach(item => {
@@ -608,22 +610,22 @@ export default function App() {
           fechaFormateada: fec,
           paciente: pac,
           medico: med,
-          servicio: item.servicio,
+          servicio: item.servicio || 'EMERGENCIA',
           consultorio: item.consultorio || '',
           nivelTriaje: item.nivelTriaje || '',
           eventos: [],
-          estadoFinal: item.estado,
-          horaInicio: item.horaFormateada,
-          horaFin: item.horaFormateada,
-          fechaIsoUltima: item.fechaIso
+          estadoFinal: item.estado || '',
+          horaInicio: item.horaFormateada || '--:--',
+          horaFin: item.horaFormateada || '--:--',
+          fechaIsoUltima: item.fechaIso || new Date().toISOString()
         });
       }
 
       const g = mapaGrupos.get(claveGrupo);
       g.eventos.push(item);
-      g.estadoFinal = item.estado;
-      g.horaFin = item.horaFormateada;
-      g.fechaIsoUltima = item.fechaIso;
+      g.estadoFinal = item.estado || '';
+      g.horaFin = item.horaFormateada || '--:--';
+      g.fechaIsoUltima = item.fechaIso || new Date().toISOString();
     });
 
     const resultado = Array.from(mapaGrupos.values());
@@ -1327,7 +1329,7 @@ export default function App() {
       setModulosSeleccionados([]);
     } catch (err) {
       console.error("Error al limpiar:", err);
-    } finally {
+    } fontally {
       setCargando(false);
     }
   };
