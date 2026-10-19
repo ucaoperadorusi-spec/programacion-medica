@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './firebase';
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, addDoc 
-} from 'firestore/lite'; // O de 'firebase/firestore' según tu configuración de imports
+} from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
   UserPlus, Shield, Pencil, Trash2, Check, X, Search, UserCheck, UserX, Key
