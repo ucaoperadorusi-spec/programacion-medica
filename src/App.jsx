@@ -349,7 +349,7 @@ export default function App() {
       );
     } catch (err) {
       console.error("Error llamando al siguiente en cola:", err);
-    } fontally {
+    } finally {
       setCargando(false);
     }
   };
