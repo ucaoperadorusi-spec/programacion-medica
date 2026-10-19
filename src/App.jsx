@@ -8,7 +8,7 @@ import {
   signInWithPopup
 } from 'firebase/auth';
 import { 
-  collection, onSnapshot, doc, getDoc, getDocs, writeBatch, setDoc, addDoc, updateDoc
+  collection, onSnapshot, doc, getDoc, getDocs, writeBatch, setDoc, addDoc, updateDoc, query, where 
 } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { 
@@ -256,31 +256,40 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const agregarAPilaEspera = async (e) => {
+const agregarAPilaEspera = async (e) => {
     e.preventDefault();
     if (!medicoParaCola || !nombrePaciente.trim() || cargando) return;
 
     const nombreLimpio = nombrePaciente.trim().toUpperCase();
 
-    const yaExisteEnCola = listaEspera.some(
-      p => p.medico === medicoParaCola.Medico && p.paciente === nombreLimpio && p.estado === 'ESPERANDO'
-    );
-
-    if (yaExisteEnCola) {
-      alert(`El paciente "${nombreLimpio}" ya se encuentra registrado en la lista de espera de este médico.`);
-      return;
-    }
-
-    const pesoPrioridadMap = {
-      'ROJO': 1,
-      'NARANJA': 2,
-      'AMARILLO': 3,
-      'VERDE': 4,
-      'AZUL': 5
-    };
-
     try {
       setCargando(true);
+
+      // 1. Consulta directa a Firestore para verificar duplicados en tiempo real
+      const q = query(
+        collection(db, "lista_espera"),
+        where("medico", "==", medicoParaCola.Medico),
+        where("paciente", "==", nombreLimpio),
+        where("estado", "==", "ESPERANDO")
+      );
+      
+      const snapshotExistente = await getDocs(q);
+
+      if (!snapshotExistente.empty) {
+        alert(`El paciente "${nombreLimpio}" ya se encuentra actualmente en la lista de espera de este médico.`);
+        setCargando(false);
+        return;
+      }
+
+      const pesoPrioridadMap = {
+        'ROJO': 1,
+        'NARANJA': 2,
+        'AMARILLO': 3,
+        'VERDE': 4,
+        'AZUL': 5
+      };
+
+      // 2. Inserción del documento
       await addDoc(collection(db, "lista_espera"), {
         medico: medicoParaCola.Medico,
         paciente: nombreLimpio,
@@ -292,11 +301,13 @@ export default function App() {
         servicio: 'EMERGENCIA'
       });
 
+      // 3. Limpieza de campos y cierre de modal
       setMedicoParaCola(null);
       setNombrePaciente('');
       setNivelTriaje('VERDE');
     } catch (err) {
       console.error("Error al encolar paciente:", err);
+      alert("Ocurrió un error al registrar el paciente.");
     } finally {
       setCargando(false);
     }
