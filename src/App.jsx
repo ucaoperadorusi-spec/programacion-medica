@@ -61,6 +61,14 @@ export default function App() {
   const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
+  const OpcionesTriaje = [
+    { id: 'ROJO', label: 'PRIORIDAD I - RIESGO VIDA/RESUCITAC', corto: 'PRIORIDAD I', cls: 'bg-red-600 text-white' },
+    { id: 'NARANJA', label: 'PRIORIDAD II - EMERGENCIA', corto: 'PRIORIDAD II', cls: 'bg-orange-500 text-white' },
+    { id: 'AMARILLO', label: 'PRIORIDAD III - URGENCIA MAYOR', corto: 'PRIORIDAD III', cls: 'bg-yellow-400 text-black' },
+    { id: 'VERDE', label: 'PRIORIDAD IV - URGENCIA MENOR', corto: 'PRIORIDAD IV', cls: 'bg-emerald-600 text-white' },
+    { id: 'AZUL', label: 'PRIORIDAD V - CONSULTA', corto: 'PRIORIDAD V', cls: 'bg-blue-600 text-white' }
+  ];
+
   const ESTADOS_MEDICO = {
     CONSULTA: { 
       label: "En Consulta", 
@@ -235,9 +243,6 @@ export default function App() {
     }
   };
 
-  // ===============================
-  // GESTIÓN DE LISTA DE ESPERA 
-  // ===============================
   useEffect(() => {
     const q = collection(db, "lista_espera");
     const unsub = onSnapshot(q, (snapshot) => {
@@ -720,7 +725,7 @@ export default function App() {
               <th class="th-header">Paciente</th>
               <th class="th-header">Médico</th>
               <th class="th-header">Servicio</th>
-              <th class="th-header">Triaje</th>
+              <th class="th-header">Prioridad Triaje</th>
               <th class="th-header">Estado Final</th>
               <th class="th-header">Trazabilidad Paso a Paso</th>
             </tr>
@@ -732,6 +737,9 @@ export default function App() {
       const rowClass = index % 2 === 0 ? 'row-even' : 'row-odd';
       let estadoLimpio = (item.estadoFinal || '').replace(/_/g, ' ');
       if (item.estadoFinal === 'DADO_DE_BAJA') estadoLimpio = 'INASISTENCIA';
+
+      const objTriaje = OpcionesTriaje.find(t => t.id === item.nivelTriaje);
+      const textoTriajeExcel = objTriaje ? objTriaje.label : 'S/N';
 
       const trazabilidadTexto = item.eventos
         .map((e, idx) => `Paso ${idx + 1}: ${e.horaFormateada} ➜ [${(e.estado || '').replace(/_/g, ' ')}]`)
@@ -746,7 +754,7 @@ export default function App() {
           <td class="td-cell td-left" style="font-weight: bold;">${item.paciente}</td>
           <td class="td-cell td-left">${item.medico}</td>
           <td class="td-cell td-center">${item.servicio || 'GENERAL'}</td>
-          <td class="td-cell td-center" style="font-weight: bold;">${item.nivelTriaje || 'S/N'}</td>
+          <td class="td-cell td-center" style="font-weight: bold;">${textoTriajeExcel}</td>
           <td class="td-cell td-center">${estadoLimpio}</td>
           <td class="td-cell td-trazabilidad">${trazabilidadTexto}</td>
         </tr>
@@ -1985,6 +1993,7 @@ export default function App() {
                   {historialFiltradoAuditoria.map((item, idx) => {
                     const esExpandido = filaExpandidaAuditoria === item.idUnico;
                     const esInasistencia = item.estadoFinal === 'INASISTENCIA' || item.estadoFinal === 'DADO_DE_BAJA';
+                    const objTriaje = OpcionesTriaje.find(t => t.id === item.nivelTriaje);
 
                     return (
                       <div 
@@ -2007,16 +2016,11 @@ export default function App() {
                           </div>
 
                           <div className="flex-1 min-w-[200px]">
-                            <p className="text-sm font-black text-cyan-400 uppercase tracking-wide flex items-center gap-2">
+                            <p className="text-sm font-black text-cyan-400 uppercase tracking-wide flex flex-wrap items-center gap-2">
                               {item.paciente}
-                              {item.nivelTriaje && (
-                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black text-white ${
-                                  item.nivelTriaje === 'ROJO' ? 'bg-red-600' :
-                                  item.nivelTriaje === 'NARANJA' ? 'bg-orange-500' :
-                                  item.nivelTriaje === 'AMARILLO' ? 'bg-yellow-500 text-black' :
-                                  item.nivelTriaje === 'AZUL' ? 'bg-blue-600' : 'bg-emerald-600'
-                                }`}>
-                                  TRIAJE: {item.nivelTriaje}
+                              {objTriaje && (
+                                <span className={`text-[9px] px-2 py-0.5 rounded font-black ${objTriaje.cls}`}>
+                                  {objTriaje.label}
                                 </span>
                               )}
                             </p>
@@ -2114,7 +2118,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL COLA DE ESPERA CON SELECCIÓN DE TRIAJE */}
+      {/* MODAL COLA DE ESPERA CON SELECCIÓN DE TRIAJE OFICIAL */}
       {medicoParaCola && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2136,24 +2140,19 @@ export default function App() {
                   Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaCola.Medico}</strong>
                 </p>
                 
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad (Triaje):</label>
-                <div className="grid grid-cols-5 gap-1 mb-3">
-                  {[
-                    { id: 'ROJO', label: '1. Rojo', cls: 'bg-red-600 text-white' },
-                    { id: 'NARANJA', label: '2. Naran.', cls: 'bg-orange-500 text-white' },
-                    { id: 'AMARILLO', label: '3. Amar.', cls: 'bg-yellow-400 text-black' },
-                    { id: 'VERDE', label: '4. Verde', cls: 'bg-emerald-600 text-white' },
-                    { id: 'AZUL', label: '5. Azul', cls: 'bg-blue-600 text-white' }
-                  ].map(t => (
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad de Emergencia:</label>
+                <div className="space-y-1.5 mb-4">
+                  {OpcionesTriaje.map(t => (
                     <button
                       key={t.id}
                       type="button"
                       onClick={() => setNivelTriaje(t.id)}
-                      className={`py-1.5 rounded-lg text-[10px] font-black border transition ${t.cls} ${
-                        nivelTriaje === t.id ? 'ring-2 ring-white scale-105 shadow-md' : 'opacity-40 hover:opacity-100'
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-black border transition flex items-center justify-between ${t.cls} ${
+                        nivelTriaje === t.id ? 'ring-2 ring-white scale-[1.02] shadow-lg' : 'opacity-50 hover:opacity-100'
                       }`}
                     >
-                      {t.label}
+                      <span>{t.label}</span>
+                      {nivelTriaje === t.id && <Check className="w-4 h-4 shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -2195,7 +2194,7 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LLAMAR PACIENTE MANUAL */}
+      {/* MODAL LLAMAR PACIENTE MANUAL CON TRIAJE OFICIAL */}
       {medicoParaLlamar && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2268,24 +2267,19 @@ export default function App() {
                   Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaLlamar.Medico}</strong>
                 </p>
 
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad (Triaje):</label>
-                <div className="grid grid-cols-5 gap-1 mb-3">
-                  {[
-                    { id: 'ROJO', label: '1. Rojo', cls: 'bg-red-600 text-white' },
-                    { id: 'NARANJA', label: '2. Naran.', cls: 'bg-orange-500 text-white' },
-                    { id: 'AMARILLO', label: '3. Amar.', cls: 'bg-yellow-400 text-black' },
-                    { id: 'VERDE', label: '4. Verde', cls: 'bg-emerald-600 text-white' },
-                    { id: 'AZUL', label: '5. Azul', cls: 'bg-blue-600 text-white' }
-                  ].map(t => (
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad de Emergencia:</label>
+                <div className="space-y-1.5 mb-4">
+                  {OpcionesTriaje.map(t => (
                     <button
                       key={t.id}
                       type="button"
                       onClick={() => setNivelTriaje(t.id)}
-                      className={`py-1.5 rounded-lg text-[10px] font-black border transition ${t.cls} ${
-                        nivelTriaje === t.id ? 'ring-2 ring-white scale-105 shadow-md' : 'opacity-40 hover:opacity-100'
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-black border transition flex items-center justify-between ${t.cls} ${
+                        nivelTriaje === t.id ? 'ring-2 ring-white scale-[1.02] shadow-lg' : 'opacity-50 hover:opacity-100'
                       }`}
                     >
-                      {t.label}
+                      <span>{t.label}</span>
+                      {nivelTriaje === t.id && <Check className="w-4 h-4 shrink-0" />}
                     </button>
                   ))}
                 </div>

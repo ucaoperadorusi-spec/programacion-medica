@@ -41,6 +41,14 @@ export default function ProgramacionMedica({
   horaActual
 }) {
 
+  const NombresPrioridadOficial = {
+    'ROJO': 'PRIORIDAD I - RIESGO VIDA/RESUCITAC',
+    'NARANJA': 'PRIORIDAD II - EMERGENCIA',
+    'AMARILLO': 'PRIORIDAD III - URGENCIA MAYOR',
+    'VERDE': 'PRIORIDAD IV - URGENCIA MENOR',
+    'AZUL': 'PRIORIDAD V - CONSULTA'
+  };
+
   const obtenerMinutos = (horaStr) => {
     if (!horaStr || horaStr === "--:--") return 0;
     const [h, m] = horaStr.split(':').map(Number);
@@ -383,13 +391,15 @@ export default function ProgramacionMedica({
                                       pac.nivelTriaje === 'AMARILLO' ? 'bg-yellow-400 text-black font-black' :
                                       pac.nivelTriaje === 'AZUL' ? 'bg-blue-600 text-white font-black' : 'bg-emerald-600 text-white font-black';
 
+                                    const textoOficial = NombresPrioridadOficial[pac.nivelTriaje] || 'PRIORIDAD IV - URGENCIA MENOR';
+
                                     return (
                                       <div key={pIdx} className="flex items-center justify-between gap-1 mt-1">
                                         <span className={`font-black truncate ${temaClaro ? 'text-slate-800' : 'text-white'}`}>
                                           {pIdx + 1}. {pac.paciente}
                                         </span>
                                         <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase shrink-0 ${colorBadge}`}>
-                                          {pac.nivelTriaje || 'VERDE'}
+                                          {textoOficial}
                                         </span>
                                       </div>
                                     );
