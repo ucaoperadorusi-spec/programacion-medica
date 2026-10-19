@@ -251,27 +251,37 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  const agregarAPilaEspera = async (e) => {
+const agregarAPilaEspera = async (e) => {
     e.preventDefault();
     if (!medicoParaCola || !nombrePaciente.trim() || cargando) return;
 
     const nombreLimpio = nombrePaciente.trim().toUpperCase();
 
-    // VALIDACIÓN PREVIA: Verificar si el paciente ya está registrado en cola para este médico
     const yaExisteEnCola = listaEspera.some(
       p => p.medico === medicoParaCola.Medico && p.paciente === nombreLimpio && p.estado === 'ESPERANDO'
     );
 
     if (yaExisteEnCola) {
-      alert(`El paciente "${nombreLimpio}" ya se encuentra registrado en la lista de espera de este médico.`);
+      alert(`El paciente "${nombreLimpio}" ya se encuentra registrado en la lista de espera.`);
       return;
     }
+
+    // MAPA DE PESOS PARA ORDENAMIENTO (Menor número = mayor prioridad)
+    const pesoPrioridadMap = {
+      'ROJO': 1,
+      'NARANJA': 2,
+      'AMARILLO': 3,
+      'VERDE': 4,
+      'AZUL': 5
+    };
 
     try {
       setCargando(true);
       await addDoc(collection(db, "lista_espera"), {
         medico: medicoParaCola.Medico,
         paciente: nombreLimpio,
+        nivelTriaje: nivelTriaje || 'VERDE',
+        pesoPrioridad: pesoPrioridadMap[nivelTriaje] || 4,
         fecha: obtenerFechaHoyLocal(),
         fechaIso: new Date().toISOString(),
         estado: 'ESPERANDO',
@@ -280,13 +290,13 @@ export default function App() {
 
       setMedicoParaCola(null);
       setNombrePaciente('');
+      setNivelTriaje('VERDE');
     } catch (err) {
-      console.error("Error al encolar paciente:", err);
+      console.error("Error al encolar paciente con triaje:", err);
     } finally {
       setCargando(false);
     }
   };
-
   const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     if (!medObj || !pacienteEnCola || cargando) return;
 
