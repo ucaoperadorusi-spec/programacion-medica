@@ -10,6 +10,7 @@ export default function ProgramacionMedica({
   servicioActivo,
   temaClaro,
   rolUsuario,
+  emailUsuarioActivo,
   modoTvActivo,
   soloTurnoActual,
   modulosSeleccionados,
@@ -168,8 +169,13 @@ export default function ProgramacionMedica({
                   ? (temaClaro ? "scale-105 z-20 shadow-2xl ring-4 ring-cyan-500 shadow-cyan-500/40" : "scale-105 z-20 shadow-2xl ring-4 ring-rose-500 shadow-rose-500/50") 
                   : "hover:-translate-y-1 z-0";
 
-                // Configuración de visualización de Prioridad
                 const infoTriajeLlamado = NombresPrioridadOficial[med.nivelTriajeLlamado] || NombresPrioridadOficial['VERDE'];
+
+                const esSuTarjetaMedico = rolUsuario === 'MEDICO' 
+                  ? (med.emailMedico && emailUsuarioActivo ? med.emailMedico.toLowerCase() === emailUsuarioActivo.toLowerCase() : true)
+                  : true;
+
+                const puedeEjecutarLlamado = (rolUsuario === 'ADMIN' || rolUsuario === 'MEDICO') && esSuTarjetaMedico;
 
                 return (
                   <div 
@@ -228,7 +234,7 @@ export default function ProgramacionMedica({
                                 <Stethoscope className="w-3.5 h-3.5" />
                                 <span>{med.consultorioTopico || "Sin consultorio asignado"}</span>
                               </p>
-                              {puedeModificarEstados && (
+                              {puedeEjecutarLlamado && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -244,7 +250,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* BLOQUE VOCEO LLAMANDO EN PANTALLA CON PRIORIDAD VISIBLE */}
+                          {/* BLOQUE VOCEO LLAMANDO */}
                           {servicioActivo === 'EMERGENCIA' && isLlamando && med.pacienteLlamado && (
                             <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                               temaClaro 
@@ -259,7 +265,6 @@ export default function ProgramacionMedica({
                                       <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
                                         Llamando a:
                                       </p>
-                                      {/* PRIORIDAD MOSTRADA EN LA PANTALLA TV */}
                                       <span className={`px-2 py-0.5 rounded text-[9px] uppercase shadow-md ${infoTriajeLlamado.cls}`}>
                                         {infoTriajeLlamado.label}
                                       </span>
@@ -290,13 +295,12 @@ export default function ProgramacionMedica({
                                 )}
                               </div>
 
-                              {puedeModificarEstados && (
+                              {puedeEjecutarLlamado && (
                                 <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-500/30 w-full">
                                   <button
                                     type="button"
                                     onClick={() => ingresarAConsultaConPaciente(med)}
                                     className="flex-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                    title="El paciente ingresó físicamente al consultorio"
                                   >
                                     <LogIn className="w-3.5 h-3.5" />
                                     <span>Ingresó a Consulta</span>
@@ -306,7 +310,6 @@ export default function ProgramacionMedica({
                                     type="button"
                                     onClick={() => volverALlamarPaciente(med)}
                                     className="px-2 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                    title="Re-llamar en TV"
                                   >
                                     <RefreshCw className="w-3.5 h-3.5" />
                                     <span>Re-llamar</span>
@@ -316,7 +319,6 @@ export default function ProgramacionMedica({
                                     type="button"
                                     onClick={() => marcarPacienteNoRespondio(med)}
                                     className="px-2 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition shadow-md flex items-center justify-center gap-1 shrink-0"
-                                    title="No acudió al llamado"
                                   >
                                     <UserMinus className="w-3.5 h-3.5" />
                                     <span>No Respondió</span>
@@ -326,7 +328,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* BLOQUE EN CONSULTA CON PRIORIDAD VISIBLE */}
+                          {/* BLOQUE EN CONSULTA */}
                           {servicioActivo === 'EMERGENCIA' && estadoClave === "CONSULTA" && med.pacienteLlamado && (
                             <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                               temaClaro 
@@ -341,7 +343,6 @@ export default function ProgramacionMedica({
                                       <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-emerald-800' : 'text-emerald-400'}`}>
                                         Atendiendo en Consulta a:
                                       </p>
-                                      {/* PRIORIDAD MOSTRADA EN PANTALLA */}
                                       <span className={`px-2 py-0.5 rounded text-[9px] uppercase shadow-md ${infoTriajeLlamado.cls}`}>
                                         {infoTriajeLlamado.label}
                                       </span>
@@ -372,13 +373,12 @@ export default function ProgramacionMedica({
                                 )}
                               </div>
 
-                              {puedeModificarEstados && (
+                              {puedeEjecutarLlamado && (
                                 <div className="flex items-center gap-2 pt-1 border-t border-emerald-500/30 w-full">
                                   <button
                                     type="button"
                                     onClick={() => marcarPacienteAtendido(med)}
                                     className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black transition shadow-lg flex items-center justify-center gap-2"
-                                    title="Culminar consulta y liberar consultorio"
                                   >
                                     <Check className="w-4 h-4" />
                                     <span>Finalizar Consulta (Atendido)</span>
@@ -427,7 +427,7 @@ export default function ProgramacionMedica({
                                 </button>
                               )}
 
-                              {rolUsuario !== 'ADMISION' && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
+                              {puedeEjecutarLlamado && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                                 <div className="flex gap-2">
                                   {enCola.length > 0 && (
                                     <button
@@ -457,7 +457,7 @@ export default function ProgramacionMedica({
                           )}
 
                           {/* BOTÓN CONSULTA EXTERNA */}
-                          {servicioActivo === 'CONSULTA_EXTERNA' && puedeModificarEstados && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
+                          {servicioActivo === 'CONSULTA_EXTERNA' && puedeEjecutarLlamado && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                             <div className="mt-3">
                               <button
                                 type="button"
@@ -500,7 +500,7 @@ export default function ProgramacionMedica({
                                       </div>
 
                                       <div className="flex items-center gap-1 shrink-0">
-                                        {rolUsuario !== 'ADMISION' && (
+                                        {puedeEjecutarLlamado && (
                                           <button
                                             onClick={() => volverALlamarPaciente(med, ina.paciente)}
                                             className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition"
@@ -511,7 +511,7 @@ export default function ProgramacionMedica({
                                           </button>
                                         )}
 
-                                        {superoLimiteIntentos && (
+                                        {superoLimiteIntentos && puedeModificarEstados && (
                                           <button
                                             onClick={() => marcarInasistenciaDefinitiva(med, ina.paciente)}
                                             className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition"

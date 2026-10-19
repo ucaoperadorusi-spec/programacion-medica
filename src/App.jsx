@@ -115,6 +115,7 @@ export default function App() {
   };
 
   const [rolUsuario, setRolUsuario] = useState(null);
+  const [emailUsuarioActivo, setEmailUsuarioActivo] = useState('');
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
   const [emailInput, setEmailInput] = useState('');
@@ -304,6 +305,12 @@ export default function App() {
   const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     if (!medObj || !pacienteEnCola || cargando) return;
 
+    // Validación estricta de permisos para llamar
+    if (rolUsuario === 'ADMISION' || rolUsuario === 'OPERADOR') {
+      alert("Su perfil no tiene permitido realizar el voceo/llamado de pacientes a pantalla TV.");
+      return;
+    }
+
     if (!medObj.consultorioTopico || !medObj.consultorioTopico.trim()) {
       setMedicoParaLlamar(medObj);
       setNombrePaciente(pacienteEnCola.paciente);
@@ -342,7 +349,7 @@ export default function App() {
       );
     } catch (err) {
       console.error("Error llamando al siguiente en cola:", err);
-    } finally {
+    } fontally {
       setCargando(false);
     }
   };
@@ -511,6 +518,11 @@ export default function App() {
   };
 
   const volverALlamarPaciente = async (medObj, nombreDirecto = null) => {
+    if (rolUsuario === 'ADMISION' || rolUsuario === 'OPERADOR') {
+      alert("Su perfil no tiene permitido realizar el voceo/llamado de pacientes.");
+      return;
+    }
+
     const pacienteAVisar = nombreDirecto || medObj?.pacienteLlamado;
     if (!medObj || !pacienteAVisar) return;
 
@@ -800,17 +812,23 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
         const emailLimpio = user.email.toLowerCase().trim();
+        setEmailUsuarioActivo(emailLimpio);
 
         try {
           const userDocRef = doc(db, "usuarios", emailLimpio);
           const userSnap = await getDoc(userDocRef);
 
           if (userSnap.exists() && userSnap.data().activo !== false) {
-            setRolUsuario(userSnap.data().rol || 'OPERADOR');
+            const rolDB = userSnap.data().rol || 'OPERADOR';
+            setRolUsuario(rolDB);
+            if (rolDB === 'ADMISION') setServicioActivo('EMERGENCIA');
           } else if (emailLimpio === 'uca.operadorusi@essalud.gob.pe') {
             setRolUsuario('ADMIN');
           } else if (emailLimpio.includes('admision')) {
             setRolUsuario('ADMISION');
+            setServicioActivo('EMERGENCIA');
+          } else if (emailLimpio.includes('medico') || emailLimpio.includes('doctor')) {
+            setRolUsuario('MEDICO');
           } else {
             setRolUsuario('OPERADOR');
           }
@@ -824,6 +842,7 @@ export default function App() {
         }
       } else {
         setRolUsuario(null);
+        setEmailUsuarioActivo('');
       }
     });
     return () => unsubscribe();
@@ -930,12 +949,19 @@ export default function App() {
       }
     }
 
-    if (nuevoEstado === "LLAMANDO" && servicioActivo === 'EMERGENCIA' && medObj) {
-      setMedicoParaLlamar(medObj);
-      setNombrePaciente('');
-      setConsultorioTopico(medObj.consultorioTopico || '');
-      setAccionPacienteAnterior('FINALIZAR_ATENDIDO');
-      return;
+    if (nuevoEstado === "LLAMANDO") {
+      if (rolUsuario === 'ADMISION' || rolUsuario === 'OPERADOR') {
+        alert("Su perfil no tiene permitido realizar el voceo/llamado de pacientes.");
+        return;
+      }
+
+      if (servicioActivo === 'EMERGENCIA' && medObj) {
+        setMedicoParaLlamar(medObj);
+        setNombrePaciente('');
+        setConsultorioTopico(medObj.consultorioTopico || '');
+        setAccionPacienteAnterior('FINALIZAR_ATENDIDO');
+        return;
+      }
     }
 
     if (estaActivo && nuevoEstado === "PROGRAMADO") {
@@ -971,6 +997,11 @@ export default function App() {
     e.preventDefault();
     if (!medicoParaLlamar || !nombrePaciente.trim() || cargando) return;
 
+    if (rolUsuario === 'ADMISION' || rolUsuario === 'OPERADOR') {
+      alert("Su perfil no tiene permitido realizar el voceo/llamado de pacientes.");
+      return;
+    }
+
     const nombreLimpio = nombrePaciente.trim().toUpperCase();
     const consultorioLimpio = consultorioTopico.trim();
     const pacienteAnterior = medicoParaLlamar.pacienteLlamado;
@@ -993,7 +1024,7 @@ export default function App() {
       const ids = Array.isArray(medicoParaLlamar.ids) ? medicoParaLlamar.ids : [medicoParaLlamar.id];
       const batch = writeBatch(db);
 
-      const nuevoEstadoAsignado = (servicioActivo === 'EMERGENCIA' && rolUsuario === 'ADMISION') ? 'CONSULTA' : 'LLAMANDO';
+      const nuevoEstadoAsignado = 'LLAMANDO';
 
       ids.forEach(idDoc => {
         const medRef = doc(db, "programacion_medica", idDoc);
@@ -1002,7 +1033,7 @@ export default function App() {
           pacienteLlamado: nombreLimpio,
           consultorioTopico: consultorioLimpio,
           nivelTriajeLlamado: nivelTriaje || 'VERDE',
-          horaIngresoConsulta: nuevoEstadoAsignado === 'CONSULTA' ? ahoraIso : null,
+          horaIngresoConsulta: null,
           estadoUltimoCambio: ahoraIso
         });
       });
@@ -1011,7 +1042,7 @@ export default function App() {
       await registrarEnHistorialFirestore(
         medicoParaLlamar.Medico, 
         nombreLimpio, 
-        nuevoEstadoAsignado === 'CONSULTA' ? 'EN_CONSULTA' : 'LLAMADO', 
+        'LLAMADO', 
         servicioActivo, 
         ahoraIso, 
         consultorioLimpio,
@@ -1311,6 +1342,7 @@ export default function App() {
       console.error("Error al cerrar sesión:", err);
     }
     setRolUsuario(null);
+    setEmailUsuarioActivo('');
     setVistaActiva('MONITOR');
   };
 
@@ -1343,7 +1375,7 @@ export default function App() {
   };
 
   const handleFileUpload = async (e) => {
-    if (rolUsuario !== 'ADMIN') return;
+    if (rolUsuario !== 'ADMIN' && rolUsuario !== 'OPERADOR') return;
     const file = e.target.files[0];
     if (!file) return;
 
@@ -1596,7 +1628,7 @@ export default function App() {
     return acc;
   }, {});
 
-  const puedeModificarEstados = rolUsuario === 'ADMIN' || rolUsuario === 'OPERADOR' || rolUsuario === 'ADMISION';
+  const puedeModificarEstados = rolUsuario === 'ADMIN' || rolUsuario === 'OPERADOR' || rolUsuario === 'ADMISION' || rolUsuario === 'MEDICO';
 
   return (
     <div className={`min-h-screen flex flex-col font-sans overflow-hidden h-screen relative transition-colors duration-300 ${
@@ -1648,21 +1680,23 @@ export default function App() {
           </div>
         </div>
 
-        {/* Pestañas Principales */}
+        {/* Pestañas Principales (Restringidas según rol) */}
         <div className={`flex p-1 rounded-2xl border transition ${
           temaClaro ? 'bg-slate-100 border-slate-300' : 'bg-slate-800/80 border-slate-700'
         }`}>
-          <button
-            onClick={() => { setVistaActiva('MONITOR'); setServicioActivo('CONSULTA_EXTERNA'); }}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-              vistaActiva === 'MONITOR' && servicioActivo === 'CONSULTA_EXTERNA'
-                ? 'bg-blue-600 text-white shadow-lg'
-                : temaClaro ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>Consulta Externa</span>
-          </button>
+          {rolUsuario !== 'ADMISION' && (
+            <button
+              onClick={() => { setVistaActiva('MONITOR'); setServicioActivo('CONSULTA_EXTERNA'); }}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+                vistaActiva === 'MONITOR' && servicioActivo === 'CONSULTA_EXTERNA'
+                  ? 'bg-blue-600 text-white shadow-lg'
+                  : temaClaro ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Consulta Externa</span>
+            </button>
+          )}
 
           <button
             onClick={() => { setVistaActiva('MONITOR'); setServicioActivo('EMERGENCIA'); }}
@@ -1776,11 +1810,19 @@ export default function App() {
               temaClaro ? 'bg-slate-100 border-blue-300' : 'bg-slate-800/60 border-blue-500/30'
             }`}>
               <span className={`text-xs font-bold px-2 flex items-center gap-1 ${
-                rolUsuario === 'ADMIN' ? 'text-emerald-500' : rolUsuario === 'ADMISION' ? 'text-cyan-400 font-extrabold' : 'text-amber-400'
+                rolUsuario === 'ADMIN' ? 'text-emerald-500' : rolUsuario === 'ADMISION' ? 'text-cyan-400 font-extrabold' : rolUsuario === 'MEDICO' ? 'text-purple-400 font-extrabold' : 'text-amber-400'
               }`}>
                 {rolUsuario === 'ADMIN' ? <CheckCircle className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-                {rolUsuario === 'ADMIN' ? 'Admin' : rolUsuario === 'ADMISION' ? 'Admisión' : 'Operador'}
+                {rolUsuario === 'ADMIN' ? 'Admin' : rolUsuario === 'ADMISION' ? 'Admisión' : rolUsuario === 'MEDICO' ? 'Médico' : 'Operador'}
               </span>
+
+              {(rolUsuario === 'ADMIN' || rolUsuario === 'OPERADOR') && (
+                <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
+                  <Upload className="w-4 h-4" />
+                  <span>{cargando ? "Cargando Excel..." : "Subir Excel"}</span>
+                  <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
+                </label>
+              )}
 
               {rolUsuario === 'ADMIN' && (
                 <>
@@ -1815,12 +1857,6 @@ export default function App() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   )}
-
-                  <label className={`flex items-center space-x-2 ${cargando ? 'bg-slate-400' : 'bg-blue-600 hover:bg-blue-500'} text-white px-3 py-2 rounded-xl cursor-pointer text-xs font-semibold transition shadow-lg`}>
-                    <Upload className="w-4 h-4" />
-                    <span>{cargando ? "Cargando Excel..." : "Subir Excel"}</span>
-                    <input type="file" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} disabled={cargando} className="hidden" />
-                  </label>
                 </>
               )}
 
@@ -1869,6 +1905,7 @@ export default function App() {
             servicioActivo={servicioActivo}
             temaClaro={temaClaro}
             rolUsuario={rolUsuario}
+            emailUsuarioActivo={emailUsuarioActivo}
             modoTvActivo={modoTvActivo}
             soloTurnoActual={soloTurnoActual}
             modulosSeleccionados={modulosSeleccionados}
@@ -2194,8 +2231,8 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL LLAMAR PACIENTE MANUAL CON TRIAJE OFICIAL */}
-      {medicoParaLlamar && (
+      {/* MODAL LLAMAR PACIENTE MANUAL (SOLO ADMIN Y MEDICO) */}
+      {medicoParaLlamar && (rolUsuario === 'ADMIN' || rolUsuario === 'MEDICO') && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
             temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
