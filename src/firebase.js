@@ -3,16 +3,17 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyAQCN6GCzkiTeAxpN6_FiSbOXaVBQEQFSo",
-  authDomain: "programacion-medica-81784.firebaseapp.com",
-  projectId: "programacion-medica-81784",
-  storageBucket: "programacion-medica-81784.firebasestorage.app",
-  messagingSenderId: "95989179251",
-  appId: "1:95989179251:web:4b679e190392c3b26a9b06",
-  measurementId: "G-N002Z8THS7"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAqGVwfj4OARdq6klc9-JesZyZ4TWrnav4",
+  authDomain: "h-ii-pucallpa.firebaseapp.com",
+  projectId: "h-ii-pucallpa",
+  storageBucket: "h-ii-pucallpa.firebasestorage.app",
+  messagingSenderId: "986111583818",
+  appId: "1:986111583818:web:14fa7e8800ddd036a328b3",
+  measurementId: "G-N6C72652EP"
 };
 
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export default app;
