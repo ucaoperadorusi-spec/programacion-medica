@@ -42,11 +42,11 @@ export default function ProgramacionMedica({
 }) {
 
   const NombresPrioridadOficial = {
-    'ROJO': 'PRIORIDAD I - RIESGO VIDA/RESUCITAC',
-    'NARANJA': 'PRIORIDAD II - EMERGENCIA',
-    'AMARILLO': 'PRIORIDAD III - URGENCIA MAYOR',
-    'VERDE': 'PRIORIDAD IV - URGENCIA MENOR',
-    'AZUL': 'PRIORIDAD V - CONSULTA'
+    'ROJO': { label: 'PRIORIDAD I - RIESGO VIDA/RESUCITAC', cls: 'bg-red-600 text-white font-black' },
+    'NARANJA': { label: 'PRIORIDAD II - EMERGENCIA', cls: 'bg-orange-500 text-white font-black' },
+    'AMARILLO': { label: 'PRIORIDAD III - URGENCIA MAYOR', cls: 'bg-yellow-400 text-black font-black' },
+    'VERDE': { label: 'PRIORIDAD IV - URGENCIA MENOR', cls: 'bg-emerald-600 text-white font-black' },
+    'AZUL': { label: 'PRIORIDAD V - CONSULTA', cls: 'bg-blue-600 text-white font-black' }
   };
 
   const obtenerMinutos = (horaStr) => {
@@ -168,6 +168,9 @@ export default function ProgramacionMedica({
                   ? (temaClaro ? "scale-105 z-20 shadow-2xl ring-4 ring-cyan-500 shadow-cyan-500/40" : "scale-105 z-20 shadow-2xl ring-4 ring-rose-500 shadow-rose-500/50") 
                   : "hover:-translate-y-1 z-0";
 
+                // Configuración de visualización de Prioridad
+                const infoTriajeLlamado = NombresPrioridadOficial[med.nivelTriajeLlamado] || NombresPrioridadOficial['VERDE'];
+
                 return (
                   <div 
                     key={mIdx} 
@@ -241,7 +244,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* BLOQUE VOCEO LLAMANDO */}
+                          {/* BLOQUE VOCEO LLAMANDO EN PANTALLA CON PRIORIDAD VISIBLE */}
                           {servicioActivo === 'EMERGENCIA' && isLlamando && med.pacienteLlamado && (
                             <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                               temaClaro 
@@ -252,9 +255,15 @@ export default function ProgramacionMedica({
                                 <div className="flex items-center gap-2.5 overflow-hidden flex-1">
                                   <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
                                   <div className="overflow-hidden w-full">
-                                    <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
-                                      Llamando a:
-                                    </p>
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                      <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
+                                        Llamando a:
+                                      </p>
+                                      {/* PRIORIDAD MOSTRADA EN LA PANTALLA TV */}
+                                      <span className={`px-2 py-0.5 rounded text-[9px] uppercase shadow-md ${infoTriajeLlamado.cls}`}>
+                                        {infoTriajeLlamado.label}
+                                      </span>
+                                    </div>
                                     <p className={`text-base font-black leading-tight tracking-wide break-words ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
                                       {med.pacienteLlamado}
                                     </p>
@@ -317,7 +326,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* BLOQUE EN CONSULTA */}
+                          {/* BLOQUE EN CONSULTA CON PRIORIDAD VISIBLE */}
                           {servicioActivo === 'EMERGENCIA' && estadoClave === "CONSULTA" && med.pacienteLlamado && (
                             <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
                               temaClaro 
@@ -328,9 +337,15 @@ export default function ProgramacionMedica({
                                 <div className="flex items-center gap-2.5 overflow-hidden flex-1">
                                   <UserCheck className="w-5 h-5 text-emerald-400 shrink-0" />
                                   <div className="overflow-hidden w-full">
-                                    <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-emerald-800' : 'text-emerald-400'}`}>
-                                      Atendiendo en Consulta a:
-                                    </p>
+                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                      <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-emerald-800' : 'text-emerald-400'}`}>
+                                        Atendiendo en Consulta a:
+                                      </p>
+                                      {/* PRIORIDAD MOSTRADA EN PANTALLA */}
+                                      <span className={`px-2 py-0.5 rounded text-[9px] uppercase shadow-md ${infoTriajeLlamado.cls}`}>
+                                        {infoTriajeLlamado.label}
+                                      </span>
+                                    </div>
                                     <p className={`text-base font-black leading-tight tracking-wide break-words ${temaClaro ? 'text-emerald-950' : 'text-white'}`}>
                                       {med.pacienteLlamado}
                                     </p>
@@ -385,21 +400,15 @@ export default function ProgramacionMedica({
                                     En Cola de Espera ({enCola.length}):
                                   </p>
                                   {enCola.slice(0, 2).map((pac, pIdx) => {
-                                    const colorBadge = 
-                                      pac.nivelTriaje === 'ROJO' ? 'bg-red-600 text-white font-black' :
-                                      pac.nivelTriaje === 'NARANJA' ? 'bg-orange-500 text-white font-black' :
-                                      pac.nivelTriaje === 'AMARILLO' ? 'bg-yellow-400 text-black font-black' :
-                                      pac.nivelTriaje === 'AZUL' ? 'bg-blue-600 text-white font-black' : 'bg-emerald-600 text-white font-black';
-
-                                    const textoOficial = NombresPrioridadOficial[pac.nivelTriaje] || 'PRIORIDAD IV - URGENCIA MENOR';
+                                    const objPrioridad = NombresPrioridadOficial[pac.nivelTriaje] || NombresPrioridadOficial['VERDE'];
 
                                     return (
                                       <div key={pIdx} className="flex items-center justify-between gap-1 mt-1">
                                         <span className={`font-black truncate ${temaClaro ? 'text-slate-800' : 'text-white'}`}>
                                           {pIdx + 1}. {pac.paciente}
                                         </span>
-                                        <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase shrink-0 ${colorBadge}`}>
-                                          {textoOficial}
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase shrink-0 ${objPrioridad.cls}`}>
+                                          {objPrioridad.label}
                                         </span>
                                       </div>
                                     );
