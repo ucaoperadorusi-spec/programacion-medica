@@ -256,7 +256,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-const agregarAPilaEspera = async (e) => {
+  const agregarAPilaEspera = async (e) => {
     e.preventDefault();
     if (!medicoParaCola || !nombrePaciente.trim() || cargando) return;
 
@@ -265,7 +265,6 @@ const agregarAPilaEspera = async (e) => {
     try {
       setCargando(true);
 
-      // 1. Consulta directa a Firestore para verificar duplicados en tiempo real
       const q = query(
         collection(db, "lista_espera"),
         where("medico", "==", medicoParaCola.Medico),
@@ -289,7 +288,6 @@ const agregarAPilaEspera = async (e) => {
         'AZUL': 5
       };
 
-      // 2. Inserción del documento
       await addDoc(collection(db, "lista_espera"), {
         medico: medicoParaCola.Medico,
         paciente: nombreLimpio,
@@ -301,7 +299,6 @@ const agregarAPilaEspera = async (e) => {
         servicio: 'EMERGENCIA'
       });
 
-      // 3. Limpieza de campos y cierre de modal
       setMedicoParaCola(null);
       setNombrePaciente('');
       setNivelTriaje('VERDE');
@@ -316,7 +313,6 @@ const agregarAPilaEspera = async (e) => {
   const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     if (!medObj || !pacienteEnCola || cargando) return;
 
-    // Validación estricta de permisos para llamar
     if (rolUsuario === 'ADMISION' || rolUsuario === 'OPERADOR') {
       alert("Su perfil no tiene permitido realizar el voceo/llamado de pacientes a pantalla TV.");
       return;
@@ -819,6 +815,7 @@ const agregarAPilaEspera = async (e) => {
     return () => clearInterval(timer);
   }, []);
 
+  // --- LÓGICA DE AUTENTICACIÓN SEGURA SIN CORREOS HARDCODED ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && user.email) {
@@ -833,23 +830,13 @@ const agregarAPilaEspera = async (e) => {
             const rolDB = userSnap.data().rol || 'OPERADOR';
             setRolUsuario(rolDB);
             if (rolDB === 'ADMISION') setServicioActivo('EMERGENCIA');
-          } else if (emailLimpio === 'uca.operadorusi@essalud.gob.pe') {
-            setRolUsuario('ADMIN');
-          } else if (emailLimpio.includes('admision')) {
-            setRolUsuario('ADMISION');
-            setServicioActivo('EMERGENCIA');
-          } else if (emailLimpio.includes('medico') || emailLimpio.includes('doctor')) {
-            setRolUsuario('MEDICO');
           } else {
+            // Fallback seguro: Asignar operador si no hay rol en la DB
             setRolUsuario('OPERADOR');
           }
         } catch (e) {
           console.error("Error al obtener rol del usuario:", e);
-          if (emailLimpio === 'uca.operadorusi@essalud.gob.pe') {
-            setRolUsuario('ADMIN');
-          } else {
-            setRolUsuario('OPERADOR');
-          }
+          setRolUsuario('OPERADOR');
         }
       } else {
         setRolUsuario(null);
@@ -1306,6 +1293,7 @@ const agregarAPilaEspera = async (e) => {
     }
   };
 
+  // --- LÓGICA DE LOGIN CON GOOGLE SEGURA SIN CORREOS HARDCODED ---
   const loginConGoogle = async () => {
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
@@ -1320,16 +1308,17 @@ const agregarAPilaEspera = async (e) => {
       const userSnap = await getDoc(userDocRef);
 
       if (!userSnap.exists()) {
-        const esAdminPrincipal = emailClean === 'uca.operadorusi@essalud.gob.pe';
+        // Todo nuevo registro automático por Google asume rol OPERADOR por seguridad
         await setDoc(userDocRef, {
           nombre: user.displayName || emailClean.split('@')[0],
           email: emailClean,
-          rol: esAdminPrincipal ? 'ADMIN' : 'OPERADOR',
+          rol: 'OPERADOR', 
           servicio: 'TODOS',
           activo: true,
           estado: 'activo',
           fechaCreacion: new Date().toISOString()
         });
+        setRolUsuario('OPERADOR');
       } else {
         const data = userSnap.data();
         if (data.activo === false || data.estado === "inactivo") {
