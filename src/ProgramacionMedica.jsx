@@ -66,7 +66,7 @@ export default function ProgramacionMedica({
 
   if (Object.keys(agrupadoPorModulo).length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4">
+      <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-4 py-20">
         <Activity className="w-16 h-16 text-slate-400 animate-bounce" />
         <p className="text-xl font-medium text-center">
           {modulosSeleccionados.length === 0
@@ -86,6 +86,7 @@ export default function ProgramacionMedica({
           temaClaro ? 'bg-white border-slate-200' : 'bg-slate-900 border-slate-800'
         }`}>
           
+          {/* Header por Módulo */}
           <div className={`flex items-center justify-between pb-4 border-b mb-6 ${
             temaClaro ? 'border-slate-200' : 'border-slate-800'
           }`}>
@@ -116,6 +117,7 @@ export default function ProgramacionMedica({
             </span>
           </div>
 
+          {/* Grid de Tarjetas Médicas */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[...agrupadoPorModulo[moduloNombre]]
               .sort((a, b) => {
@@ -143,9 +145,15 @@ export default function ProgramacionMedica({
 
                 const inasistentesPendientes = obtenerInasistentesPendientes(med.Medico);
                 
+                // ORDENAMIENTO DE COLA POR TRIAJE Y TIEMPO
                 const enCola = listaEspera
                   .filter(p => p.medico === med.Medico)
-                  .sort((a,b) => new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime());
+                  .sort((a, b) => {
+                    const pesoA = a.pesoPrioridad || 4;
+                    const pesoB = b.pesoPrioridad || 4;
+                    if (pesoA !== pesoB) return pesoA - pesoB;
+                    return new Date(a.fechaIso).getTime() - new Date(b.fechaIso).getTime();
+                  });
 
                 const isLlamando = estadoClave === "LLAMANDO";
                 const animacionLlamado = isLlamando 
@@ -158,11 +166,45 @@ export default function ProgramacionMedica({
                     className={`p-5 rounded-2xl flex flex-col justify-between transition-all duration-300 w-full relative ${animacionLlamado} ${configEstado.cardColor}`}
                   >
                     <div>
+                      {/* Cabecera Tarjeta */}
                       <div className="flex justify-between items-start mb-2">
                         <div className="w-full">
-                          <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
-                            {med.Medico}
-                          </h3>
+                          <div className="flex justify-between items-start gap-2">
+                            <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
+                              {med.Medico}
+                            </h3>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {med.esReemplazo && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-700 border border-purple-400">
+                                  REEMPLAZO
+                                </span>
+                              )}
+
+                              {rolUsuario === 'ADMIN' && (
+                                <>
+                                  <button
+                                    onClick={() => abrirModalEditar(med)}
+                                    className={`p-1.5 rounded-lg border transition ${
+                                      temaClaro 
+                                        ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' 
+                                        : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
+                                    }`}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    onClick={() => eliminarRegistroIndividual(med)}
+                                    className="p-1.5 rounded-lg border bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20 transition"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
                           {med.esReemplazo && med.medicoTitular && (
                             <p className="text-[11px] text-purple-400 italic font-medium">
                               Reemplaza a: {med.medicoTitular}
@@ -323,7 +365,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* COLA Y BOTONES EMERGENCIA */}
+                          {/* COLA DE ESPERA Y BOTONES EMERGENCIA */}
                           {servicioActivo === 'EMERGENCIA' && puedeModificarEstados && (
                             <div className="mt-4 pt-3 border-t border-slate-700/40 space-y-2">
                               {enCola.length > 0 && !modoTvActivo && (
@@ -334,8 +376,24 @@ export default function ProgramacionMedica({
                                     <ListPlus className="w-3.5 h-3.5" />
                                     En Cola de Espera ({enCola.length}):
                                   </p>
-                                  <p className={`font-black truncate ${temaClaro ? 'text-cyan-600' : 'text-cyan-400'}`}>1. {enCola[0].paciente}</p>
-                                  {enCola.length > 1 && <p className={`truncate mt-0.5 ${temaClaro ? 'text-slate-500' : 'text-slate-500'}`}>2. {enCola[1].paciente}</p>}
+                                  {enCola.slice(0, 2).map((pac, pIdx) => {
+                                    const colorBadge = 
+                                      pac.nivelTriaje === 'ROJO' ? 'bg-red-600 text-white font-black' :
+                                      pac.nivelTriaje === 'NARANJA' ? 'bg-orange-500 text-white font-black' :
+                                      pac.nivelTriaje === 'AMARILLO' ? 'bg-yellow-400 text-black font-black' :
+                                      pac.nivelTriaje === 'AZUL' ? 'bg-blue-600 text-white font-black' : 'bg-emerald-600 text-white font-black';
+
+                                    return (
+                                      <div key={pIdx} className="flex items-center justify-between gap-1 mt-1">
+                                        <span className={`font-black truncate ${temaClaro ? 'text-slate-800' : 'text-white'}`}>
+                                          {pIdx + 1}. {pac.paciente}
+                                        </span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase shrink-0 ${colorBadge}`}>
+                                          {pac.nivelTriaje || 'VERDE'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
 
@@ -379,7 +437,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* BOTÓN INGRESAR / LLAMAR CONSULTA EXTERNA */}
+                          {/* BOTÓN CONSULTA EXTERNA */}
                           {servicioActivo === 'CONSULTA_EXTERNA' && puedeModificarEstados && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                             <div className="mt-3">
                               <button
@@ -397,7 +455,7 @@ export default function ProgramacionMedica({
                             </div>
                           )}
 
-                          {/* LISTA DE PACIENTES INASISTENTES PENDIENTES */}
+                          {/* PACIENTES INASISTENTES PENDIENTES */}
                           {puedeModificarEstados && !modoTvActivo && inasistentesPendientes.length > 0 && (
                             <div className="mt-3 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-1.5">
                               <p className="text-[10px] font-black uppercase text-amber-500 flex items-center gap-1">
@@ -452,39 +510,10 @@ export default function ProgramacionMedica({
                             </div>
                           )}
                         </div>
-
-                        <div className="flex items-center gap-1">
-                          {med.esReemplazo && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-700 border border-purple-400">
-                              REEMPLAZO
-                            </span>
-                          )}
-
-                          {rolUsuario === 'ADMIN' && (
-                            <>
-                              <button
-                                onClick={() => abrirModalEditar(med)}
-                                className={`p-1.5 rounded-lg border transition ${
-                                  temaClaro 
-                                    ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' 
-                                    : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
-                                }`}
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-
-                              <button
-                                onClick={() => eliminarRegistroIndividual(med)}
-                                className="p-1.5 rounded-lg border bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20 transition"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 mb-3">
+                      {/* Etiquetas de Área / Subactividad */}
+                      <div className="flex flex-wrap items-center gap-2 mb-3 mt-3">
                         <span className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
                           temaClaro 
                             ? 'bg-slate-100 text-slate-700 border border-slate-200/80' 
@@ -503,6 +532,7 @@ export default function ProgramacionMedica({
                         )}
                       </div>
 
+                      {/* Horarios */}
                       <div className="space-y-1 mb-4">
                         <p className={`text-[11px] font-semibold uppercase tracking-wider ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
                           Horarios / Turnos:
@@ -566,6 +596,7 @@ export default function ProgramacionMedica({
                       </div>
                     </div>
 
+                    {/* Footer Tarjeta: Estado y Botones de Cambio de Estado */}
                     <div className={`mt-2 p-3 rounded-xl border space-y-3 ${
                       temaClaro 
                         ? 'bg-slate-50 border-slate-200/80 shadow-inner' 

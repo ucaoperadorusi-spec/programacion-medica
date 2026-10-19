@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db, auth, firebaseConfig } from './firebase';
+import { db, auth } from './firebase';
 import { 
   signInWithEmailAndPassword, 
   signOut, 
@@ -12,20 +12,17 @@ import {
 } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { 
-  Upload, Clock, Activity, Building2, Trash2, Filter, Lock, Unlock, X, 
+  Upload, Clock, Activity, Building2, Trash2, Filter, Unlock, Lock, X, 
   CheckCircle, Megaphone, Edit3, Tv, Play, Pause, UserCheck, 
   UserPlus, Sun, Moon, CheckSquare, 
   Square, SlidersHorizontal, Shield, Pencil, Plus, Siren,
-  History, UserMinus, AlertCircle, Check, LogIn, Search, ChevronDown, ChevronUp,
-  Download, Users
+  History, UserMinus, AlertCircle, Check, Search, ChevronDown, ChevronUp,
+  Download, Users, ListPlus
 } from 'lucide-react';
 
 import GestionUsuarios from './GestionUsuarios';
 import ProgramacionMedica from './ProgramacionMedica';
 
-// ==========================================
-// COMPONENTE PRINCIPAL: APP
-// ==========================================
 export default function App() {
   const [programacion, setProgramacion] = useState([]);
   const [comunicado, setComunicado] = useState("Bienvenido al H. II PUCALLPA. Recuerde presentar su documento de identidad.");
@@ -43,9 +40,10 @@ export default function App() {
   const [consultorioTopico, setConsultorioTopico] = useState('');
   const [accionPacienteAnterior, setAccionPacienteAnterior] = useState('FINALIZAR_ATENDIDO');
 
-  // Estados de Lista de Espera (Admisión)
+  // Estados de Lista de Espera (Admisión / Triaje)
   const [listaEspera, setListaEspera] = useState([]);
   const [medicoParaCola, setMedicoParaCola] = useState(null);
+  const [nivelTriaje, setNivelTriaje] = useState('VERDE');
 
   const [medicoParaEditarPaciente, setMedicoParaEditarPaciente] = useState(null);
   const [nuevoNombreEditado, setNuevoNombreEditado] = useState('');
@@ -203,12 +201,13 @@ export default function App() {
     procesarSiguienteLlamado();
   };
 
-  const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio, horaIngresoIso = null, consultorio = '') => {
+  const registrarEnHistorialFirestore = async (medico, paciente, estadoLlamado, servicio, horaIngresoIso = null, consultorio = '', nivelTriajeDoc = '') => {
     try {
       await addDoc(collection(db, "historial_llamados"), {
         medico: medico || "Desconocido",
         paciente: paciente || "Desconocido",
         consultorio: consultorio || "",
+        nivelTriaje: nivelTriajeDoc || "",
         estado: estadoLlamado, 
         servicio: servicio || 'EMERGENCIA',
         fechaIso: horaIngresoIso || new Date().toISOString(),
@@ -251,7 +250,7 @@ export default function App() {
     return () => unsub();
   }, []);
 
-const agregarAPilaEspera = async (e) => {
+  const agregarAPilaEspera = async (e) => {
     e.preventDefault();
     if (!medicoParaCola || !nombrePaciente.trim() || cargando) return;
 
@@ -262,11 +261,10 @@ const agregarAPilaEspera = async (e) => {
     );
 
     if (yaExisteEnCola) {
-      alert(`El paciente "${nombreLimpio}" ya se encuentra registrado en la lista de espera.`);
+      alert(`El paciente "${nombreLimpio}" ya se encuentra registrado en la lista de espera de este médico.`);
       return;
     }
 
-    // MAPA DE PESOS PARA ORDENAMIENTO (Menor número = mayor prioridad)
     const pesoPrioridadMap = {
       'ROJO': 1,
       'NARANJA': 2,
@@ -292,15 +290,15 @@ const agregarAPilaEspera = async (e) => {
       setNombrePaciente('');
       setNivelTriaje('VERDE');
     } catch (err) {
-      console.error("Error al encolar paciente con triaje:", err);
+      console.error("Error al encolar paciente:", err);
     } finally {
       setCargando(false);
     }
   };
+
   const llamarSiguienteCola = async (medObj, pacienteEnCola) => {
     if (!medObj || !pacienteEnCola || cargando) return;
 
-    // SI EL MÉDICO NO TIENE CONSULTORIO/TÓPICO REGISTRADO, SOLICITAMOS INGRESARLO EN EL MODAL
     if (!medObj.consultorioTopico || !medObj.consultorioTopico.trim()) {
       setMedicoParaLlamar(medObj);
       setNombrePaciente(pacienteEnCola.paciente);
@@ -322,6 +320,7 @@ const agregarAPilaEspera = async (e) => {
         batch.update(medRef, {
           estado: 'LLAMANDO',
           pacienteLlamado: pacienteEnCola.paciente,
+          nivelTriajeLlamado: pacienteEnCola.nivelTriaje || 'VERDE',
           estadoUltimoCambio: ahoraIso
         });
       });
@@ -333,7 +332,8 @@ const agregarAPilaEspera = async (e) => {
         'LLAMADO', 
         servicioActivo, 
         ahoraIso, 
-        medObj.consultorioTopico
+        medObj.consultorioTopico,
+        pacienteEnCola.nivelTriaje || 'VERDE'
       );
     } catch (err) {
       console.error("Error llamando al siguiente en cola:", err);
@@ -405,6 +405,7 @@ const agregarAPilaEspera = async (e) => {
           batch.update(medRef, {
             estado: "CONSULTA",
             pacienteLlamado: null,
+            nivelTriajeLlamado: null,
             horaIngresoConsulta: null,
             estadoUltimoCambio: ahoraIso
           });
@@ -424,7 +425,7 @@ const agregarAPilaEspera = async (e) => {
       const pacienteNombre = medObj.pacienteLlamado;
       const ahoraIso = new Date().toISOString();
 
-      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'EN_CONSULTA', servicioActivo, ahoraIso, medObj.consultorioTopico);
+      await registrarEnHistorialFirestore(medObj.Medico, pacienteNombre, 'EN_CONSULTA', servicioActivo, ahoraIso, medObj.consultorioTopico, medObj.nivelTriajeLlamado);
 
       const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
       const batch = writeBatch(db);
@@ -463,6 +464,7 @@ const agregarAPilaEspera = async (e) => {
         batch.update(medRef, {
           estado: "CONSULTA",
           pacienteLlamado: null,
+          nivelTriajeLlamado: null,
           horaIngresoConsulta: null,
           estadoUltimoCambio: ahoraIso
         });
@@ -491,6 +493,7 @@ const agregarAPilaEspera = async (e) => {
         batch.update(medRef, {
           estado: "CONSULTA",
           pacienteLlamado: null,
+          nivelTriajeLlamado: null,
           horaIngresoConsulta: null,
           estadoUltimoCambio: ahoraIso
         });
@@ -506,7 +509,6 @@ const agregarAPilaEspera = async (e) => {
     const pacienteAVisar = nombreDirecto || medObj?.pacienteLlamado;
     if (!medObj || !pacienteAVisar) return;
 
-    // SI YA HAY UN PACIENTE DIFERENTE SIENDO LLAMADO, ABRIMOS EL MODAL DE RESOLUCIÓN
     if (
       medObj.pacienteLlamado && 
       nombreDirecto && 
@@ -608,6 +610,7 @@ const agregarAPilaEspera = async (e) => {
           medico: med,
           servicio: item.servicio,
           consultorio: item.consultorio || '',
+          nivelTriaje: item.nivelTriaje || '',
           eventos: [],
           estadoFinal: item.estado,
           horaInicio: item.horaFormateada,
@@ -715,8 +718,8 @@ const agregarAPilaEspera = async (e) => {
               <th class="th-header">Paciente</th>
               <th class="th-header">Médico</th>
               <th class="th-header">Servicio</th>
+              <th class="th-header">Triaje</th>
               <th class="th-header">Estado Final</th>
-              <th class="th-header">Intentos</th>
               <th class="th-header">Trazabilidad Paso a Paso</th>
             </tr>
           </thead>
@@ -741,8 +744,8 @@ const agregarAPilaEspera = async (e) => {
           <td class="td-cell td-left" style="font-weight: bold;">${item.paciente}</td>
           <td class="td-cell td-left">${item.medico}</td>
           <td class="td-cell td-center">${item.servicio || 'GENERAL'}</td>
+          <td class="td-cell td-center" style="font-weight: bold;">${item.nivelTriaje || 'S/N'}</td>
           <td class="td-cell td-center">${estadoLimpio}</td>
-          <td class="td-cell td-center">${item.eventos.length}</td>
           <td class="td-cell td-trazabilidad">${trazabilidadTexto}</td>
         </tr>
       `;
@@ -846,7 +849,6 @@ const agregarAPilaEspera = async (e) => {
     return () => unsubscribe();
   }, []);
 
-  // Detectar llamado en vivo para interrupción del TV
   const medicoLlamandoEnVivo = programacion.find(
     p => p.estado === 'LLAMANDO' && p.pacienteLlamado && modulosSeleccionados.includes(p.Modulo || "Módulo General")
   );
@@ -989,6 +991,7 @@ const agregarAPilaEspera = async (e) => {
           estado: nuevoEstadoAsignado,
           pacienteLlamado: nombreLimpio,
           consultorioTopico: consultorioLimpio,
+          nivelTriajeLlamado: nivelTriaje || 'VERDE',
           horaIngresoConsulta: nuevoEstadoAsignado === 'CONSULTA' ? ahoraIso : null,
           estadoUltimoCambio: ahoraIso
         });
@@ -1001,12 +1004,14 @@ const agregarAPilaEspera = async (e) => {
         nuevoEstadoAsignado === 'CONSULTA' ? 'EN_CONSULTA' : 'LLAMADO', 
         servicioActivo, 
         ahoraIso, 
-        consultorioLimpio
+        consultorioLimpio,
+        nivelTriaje || 'VERDE'
       );
 
       setMedicoParaLlamar(null);
       setNombrePaciente('');
       setConsultorioTopico('');
+      setNivelTriaje('VERDE');
       setAccionPacienteAnterior('FINALIZAR_ATENDIDO');
     } catch (err) {
       console.error("Error al ingresar/llamar paciente:", err);
@@ -1844,7 +1849,7 @@ const agregarAPilaEspera = async (e) => {
         </div>
       )}
 
-      {/* VISTA PRINCIPAL (COMPONENTES DELEGADOS) */}
+      {/* VISTA PRINCIPAL */}
       <main ref={mainScrollRef} className="flex-1 p-8 overflow-y-auto relative">
         {vistaActiva === 'USUARIOS' ? (
           <GestionUsuarios temaClaro={temaClaro} />
@@ -2000,7 +2005,19 @@ const agregarAPilaEspera = async (e) => {
                           </div>
 
                           <div className="flex-1 min-w-[200px]">
-                            <p className="text-sm font-black text-cyan-400 uppercase tracking-wide">{item.paciente}</p>
+                            <p className="text-sm font-black text-cyan-400 uppercase tracking-wide flex items-center gap-2">
+                              {item.paciente}
+                              {item.nivelTriaje && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-black text-white ${
+                                  item.nivelTriaje === 'ROJO' ? 'bg-red-600' :
+                                  item.nivelTriaje === 'NARANJA' ? 'bg-orange-500' :
+                                  item.nivelTriaje === 'AMARILLO' ? 'bg-yellow-500 text-black' :
+                                  item.nivelTriaje === 'AZUL' ? 'bg-blue-600' : 'bg-emerald-600'
+                                }`}>
+                                  TRIAJE: {item.nivelTriaje}
+                                </span>
+                              )}
+                            </p>
                             <p className="text-xs text-slate-300 font-medium">Médico: {item.medico}</p>
                             {item.consultorio && (
                               <p className="text-[11px] text-amber-300 font-bold">Lugar: {item.consultorio}</p>
@@ -2095,7 +2112,7 @@ const agregarAPilaEspera = async (e) => {
         </div>
       )}
 
-      {/* MODAL COLA DE ESPERA */}
+      {/* MODAL COLA DE ESPERA CON SELECCIÓN DE TRIAJE */}
       {medicoParaCola && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
@@ -2116,6 +2133,29 @@ const agregarAPilaEspera = async (e) => {
                 <p className="text-xs text-slate-400 mb-2">
                   Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaCola.Medico}</strong>
                 </p>
+                
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad (Triaje):</label>
+                <div className="grid grid-cols-5 gap-1 mb-3">
+                  {[
+                    { id: 'ROJO', label: '1. Rojo', cls: 'bg-red-600 text-white' },
+                    { id: 'NARANJA', label: '2. Naran.', cls: 'bg-orange-500 text-white' },
+                    { id: 'AMARILLO', label: '3. Amar.', cls: 'bg-yellow-400 text-black' },
+                    { id: 'VERDE', label: '4. Verde', cls: 'bg-emerald-600 text-white' },
+                    { id: 'AZUL', label: '5. Azul', cls: 'bg-blue-600 text-white' }
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setNivelTriaje(t.id)}
+                      className={`py-1.5 rounded-lg text-[10px] font-black border transition ${t.cls} ${
+                        nivelTriaje === t.id ? 'ring-2 ring-white scale-105 shadow-md' : 'opacity-40 hover:opacity-100'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
                 <label className="block text-xs font-bold mb-1.5 text-slate-400">Apellidos y Nombres del Paciente:</label>
                 <input
                   type="text"
@@ -2130,6 +2170,7 @@ const agregarAPilaEspera = async (e) => {
                   autoFocus
                 />
               </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
@@ -2224,7 +2265,29 @@ const agregarAPilaEspera = async (e) => {
                 <p className="text-xs text-slate-400 mb-2">
                   Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaLlamar.Medico}</strong>
                 </p>
-                
+
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad (Triaje):</label>
+                <div className="grid grid-cols-5 gap-1 mb-3">
+                  {[
+                    { id: 'ROJO', label: '1. Rojo', cls: 'bg-red-600 text-white' },
+                    { id: 'NARANJA', label: '2. Naran.', cls: 'bg-orange-500 text-white' },
+                    { id: 'AMARILLO', label: '3. Amar.', cls: 'bg-yellow-400 text-black' },
+                    { id: 'VERDE', label: '4. Verde', cls: 'bg-emerald-600 text-white' },
+                    { id: 'AZUL', label: '5. Azul', cls: 'bg-blue-600 text-white' }
+                  ].map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setNivelTriaje(t.id)}
+                      className={`py-1.5 rounded-lg text-[10px] font-black border transition ${t.cls} ${
+                        nivelTriaje === t.id ? 'ring-2 ring-white scale-105 shadow-md' : 'opacity-40 hover:opacity-100'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
                 <label className="block text-xs font-bold mb-1.5 text-slate-400">Apellidos y Nombres del Nuevo Paciente:</label>
                 <input
                   type="text"
