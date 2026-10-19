@@ -1329,7 +1329,7 @@ export default function App() {
       setModulosSeleccionados([]);
     } catch (err) {
       console.error("Error al limpiar:", err);
-    } fontally {
+    } finally {
       setCargando(false);
     }
   };
