@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth } from './firebase';
+import { db } from './firebase';
 import { 
-  collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, addDoc 
+  collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc 
 } from 'firebase/firestore';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { initializeApp, getApps } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword } from 'firebase/auth';
 import { 
-  UserPlus, Shield, Pencil, Trash2, Check, X, Search, UserCheck, UserX, Key
+  UserPlus, Shield, Pencil, Trash2, Search, UserCheck, UserX, X 
 } from 'lucide-react';
+
+// Importa las credenciales de tu proyecto para la app secundaria de Auth
+import { firebaseConfig } from './firebase'; 
 
 export default function GestionUsuarios({ temaClaro }) {
   const [usuarios, setUsuarios] = useState([]);
@@ -50,7 +54,16 @@ export default function GestionUsuarios({ temaClaro }) {
       setCargando(true);
       const emailClean = formCrear.email.toLowerCase().trim();
 
-      // Guardar registro en la colección "usuarios" de Firestore
+      // 1. Crear usuario en Firebase Authentication usando una App secundaria (para no cerrar la sesión del Admin)
+      let secondaryApp = getApps().find(app => app.name === 'SecondaryApp');
+      if (!secondaryApp) {
+        secondaryApp = initializeApp(firebaseConfig, 'SecondaryApp');
+      }
+      const secondaryAuth = getAuth(secondaryApp);
+
+      await createUserWithEmailAndPassword(secondaryAuth, emailClean, formCrear.password.trim());
+
+      // 2. Guardar el rol y los datos del perfil en Firestore
       await setDoc(doc(db, "usuarios", emailClean), {
         nombre: formCrear.nombre.trim() || emailClean.split('@')[0],
         email: emailClean,
@@ -63,10 +76,10 @@ export default function GestionUsuarios({ temaClaro }) {
 
       setMostrarModalCrear(false);
       setFormCrear({ nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS' });
-      alert("Usuario registrado con éxito en el sistema.");
+      alert("Usuario creado exitosamente tanto en Authentication como en Firestore.");
     } catch (err) {
       console.error("Error al registrar usuario:", err);
-      alert("Error al guardar usuario: " + err.message);
+      alert("Error al registrar: " + (err.code === 'auth/email-already-in-use' ? 'El correo ya está registrado en Authentication.' : err.message));
     } finally {
       setCargando(false);
     }
@@ -107,7 +120,7 @@ export default function GestionUsuarios({ temaClaro }) {
   };
 
   const eliminarUsuario = async (u) => {
-    if (!window.confirm(`¿Seguro que deseas eliminar al usuario ${u.email}?`)) return;
+    if (!window.confirm(`¿Seguro que deseas eliminar al usuario ${u.email} de la base de datos?`)) return;
     try {
       await deleteDoc(doc(db, "usuarios", u.id));
     } catch (err) {
@@ -240,7 +253,7 @@ export default function GestionUsuarios({ temaClaro }) {
         </table>
       </div>
 
-      {/* MODAL CREAR USUARIO CON ROL MÉDICO INCLUIDO */}
+      {/* MODAL CREAR USUARIO */}
       {mostrarModalCrear && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
