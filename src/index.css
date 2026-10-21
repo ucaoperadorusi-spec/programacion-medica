@@ -2,30 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-@keyframes scrollVertical {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(-50%); }
+/* Animación fluida para cintillo de comunicados */
+@keyframes marqueeAnimation {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
 }
 
-.animate-scroll {
-  animation: scrollVertical 40s linear infinite;
-}
-
-.animate-scroll:hover {
-  animation-play-state: paused;
-}
-@keyframes marquee {
-  0% {
-    transform: translateX(100%);
-  }
-  100% {
-    transform: translateX(-100%);
-  }
-}
-
-.animate-marquee-full {
+.animacion-marquee {
   display: inline-block;
   white-space: nowrap;
   padding-left: 100%;
-  animation: marquee 25s linear infinite;
+  animation: marqueeAnimation 35s linear infinite;
+  will-change: transform;
+}
+
+.animacion-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Scrollbar personalizado estético para modo oscuro y claro */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
 }

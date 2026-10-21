@@ -1,4 +1,4 @@
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -9,10 +9,15 @@ export const firebaseConfig = {
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: "G-N6C72652EP"
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-N6C72652EP",
 };
 
-const app = initializeApp(firebaseConfig);
+// Validar que las variables críticas estén configuradas
+if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+  console.warn("⚠️ Las variables de entorno de Firebase no están completas en .env");
+}
+
+const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

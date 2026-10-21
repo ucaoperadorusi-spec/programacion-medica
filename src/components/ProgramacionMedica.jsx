@@ -4,74 +4,46 @@ import {
   UserMinus, UserCheck, Check, ListPlus, UserPlus, AlertCircle, 
   UserX, Trash2, Timer, CheckCircle, Activity
 } from 'lucide-react';
+import { useApp } from '../context/AppContext';
+import { NombresPrioridadOficial } from '../constants';
+import { obtenerEstadoHorario } from '../utils/horarios';
 
-export default function ProgramacionMedica({
-  agrupadoPorModulo,
-  servicioActivo,
-  temaClaro,
-  rolUsuario,
-  emailUsuarioActivo,
-  modoTvActivo,
-  soloTurnoActual,
-  modulosSeleccionados,
-  ESTADOS_MEDICO,
-  estaEnTurno,
-  estaEnUltimaHora,
-  calcularEstadoInteligente,
-  obtenerTiempoTranscurrido,
-  obtenerInasistentesPendientes,
-  listaEspera,
-  puedeModificarEstados,
-  cambiarEstadoMedico,
-  ingresarAConsultaConPaciente,
-  volverALlamarPaciente,
-  marcarPacienteNoRespondio,
-  marcarPacienteAtendido,
-  marcarInasistenciaDefinitiva,
-  llamarSiguienteCola,
-  setMedicoParaEditarPaciente,
-  setNuevoNombreEditado,
-  setMedicoParaCola,
-  setNombrePaciente,
-  setMedicoParaLlamar,
-  setConsultorioTopico,
-  setMedicoParaReemplazo,
-  restaurarTitular,
-  abrirModalEditar,
-  eliminarRegistroIndividual,
-  horaActual
-}) {
-
-  const NombresPrioridadOficial = {
-    'ROJO': { label: 'PRIORIDAD I - RIESGO VIDA/RESUCITAC', cls: 'bg-red-600 text-white font-black' },
-    'NARANJA': { label: 'PRIORIDAD II - EMERGENCIA', cls: 'bg-orange-500 text-white font-black' },
-    'AMARILLO': { label: 'PRIORIDAD III - URGENCIA MAYOR', cls: 'bg-yellow-400 text-black font-black' },
-    'VERDE': { label: 'PRIORIDAD IV - URGENCIA MENOR', cls: 'bg-emerald-600 text-white font-black' },
-    'AZUL': { label: 'PRIORIDAD V - CONSULTA', cls: 'bg-blue-600 text-white font-black' }
-  };
-
-  const obtenerMinutos = (horaStr) => {
-    if (!horaStr || horaStr === "--:--") return 0;
-    const [h, m] = horaStr.split(':').map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
-
-  const obtenerEstadoHorario = (h) => {
-    if (!h || !h.inicio || !h.fin || h.inicio === "--:--" || h.fin === "--:--") return 'PASADO';
-    
-    const ahora = (horaActual || new Date()).getHours() * 60 + (horaActual || new Date()).getMinutes();
-    const inicioMin = obtenerMinutos(h.inicio);
-    const finMin = obtenerMinutos(h.fin);
-
-    if (inicioMin <= finMin) {
-      if (ahora >= finMin) return 'PASADO';
-      if (ahora >= inicioMin && ahora < finMin) return 'ACTIVO';
-      return 'FUTURO';
-    } else {
-      if (ahora >= inicioMin || ahora < finMin) return 'ACTIVO';
-      return 'PASADO';
-    }
-  };
+export default function ProgramacionMedica() {
+  const {
+    agrupadoPorModulo,
+    servicioActivo,
+    temaClaro,
+    rolUsuario,
+    emailUsuarioActivo,
+    modoTvActivo,
+    soloTurnoActual,
+    modulosSeleccionados,
+    ESTADOS_MEDICO,
+    estaEnTurno,
+    estaEnUltimaHora,
+    calcularEstadoInteligente,
+    obtenerTiempoTranscurrido,
+    obtenerInasistentesPendientes,
+    listaEspera,
+    puedeModificarEstados,
+    cambiarEstadoMedico,
+    ingresarAConsultaConPaciente,
+    volverALlamarPaciente,
+    marcarPacienteNoRespondio,
+    marcarPacienteAtendido,
+    marcarInasistenciaDefinitiva,
+    llamarSiguienteCola,
+    setMedicoParaEditarPaciente,
+    setNuevoNombreEditado,
+    setMedicoParaCola,
+    setNombrePaciente,
+    setMedicoParaLlamar,
+    setConsultorioTopico,
+    setMedicoParaReemplazo,
+    restaurarTitular,
+    abrirModalEditar,
+    eliminarRegistroIndividual
+  } = useApp();
 
   if (Object.keys(agrupadoPorModulo).length === 0) {
     return (
@@ -201,19 +173,23 @@ export default function ProgramacionMedica({
                               {rolUsuario === 'ADMIN' && (
                                 <>
                                   <button
+                                    type="button"
                                     onClick={() => abrirModalEditar(med)}
                                     className={`p-1.5 rounded-lg border transition ${
                                       temaClaro 
                                         ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' 
                                         : 'bg-blue-900/30 text-blue-300 border-blue-700/50 hover:bg-blue-800/40'
                                     }`}
+                                    title="Editar Programación"
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
 
                                   <button
+                                    type="button"
                                     onClick={() => eliminarRegistroIndividual(med)}
                                     className="p-1.5 rounded-lg border bg-red-500/10 text-red-500 border-red-500/30 hover:bg-red-500/20 transition"
+                                    title="Eliminar Registro"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -502,6 +478,7 @@ export default function ProgramacionMedica({
                                       <div className="flex items-center gap-1 shrink-0">
                                         {puedeEjecutarLlamado && (
                                           <button
+                                            type="button"
                                             onClick={() => volverALlamarPaciente(med, ina.paciente)}
                                             className="px-2 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition"
                                             title="Volver a llamar al paciente"
@@ -513,6 +490,7 @@ export default function ProgramacionMedica({
 
                                         {superoLimiteIntentos && puedeModificarEstados && (
                                           <button
+                                            type="button"
                                             onClick={() => marcarInasistenciaDefinitiva(med, ina.paciente)}
                                             className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold text-[10px] flex items-center gap-1 shadow-sm transition"
                                             title="Marcar inasistencia definitiva"
@@ -636,19 +614,23 @@ export default function ProgramacionMedica({
                         {puedeModificarEstados && (
                           <div className="flex items-center gap-1">
                             <button
+                              type="button"
                               onClick={() => setMedicoParaReemplazo(med)}
                               className={`p-1.5 rounded-lg border transition ${
                                 temaClaro ? 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50' : 'bg-purple-900/40 text-purple-300 border-purple-700/50 hover:bg-purple-800/50'
                               }`}
+                              title="Asignar reemplazo"
                             >
                               <UserPlus className="w-3.5 h-3.5" />
                             </button>
                             {med.esReemplazo && (
                               <button
+                                type="button"
                                 onClick={() => restaurarTitular(med)}
                                 className={`p-1.5 rounded-lg border transition ${
                                   temaClaro ? 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50' : 'bg-amber-900/40 text-amber-300 border-amber-700/50 hover:bg-amber-800/50'
                                 }`}
+                                title="Restaurar médico titular"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                               </button>
@@ -679,6 +661,7 @@ export default function ProgramacionMedica({
                             return (
                               <button
                                 key={key}
+                                type="button"
                                 disabled={esBloqueado}
                                 onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora, med)}
                                 className={`py-1.5 text-[10px] font-black tracking-wider rounded-lg border transition shadow-sm ${

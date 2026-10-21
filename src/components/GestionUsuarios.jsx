@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from './firebase';
+import { db } from '../firebase';
 import { 
   collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc 
 } from 'firebase/firestore';
@@ -9,10 +9,14 @@ import {
   UserPlus, Shield, Pencil, Trash2, Search, UserCheck, UserX, X 
 } from 'lucide-react';
 
-// Importa las credenciales de tu proyecto para la app secundaria de Auth
-import { firebaseConfig } from './firebase'; 
+import { firebaseConfig } from '../firebase';
+import { useApp } from '../context/AppContext';
+import { useToast } from './Toast';
 
-export default function GestionUsuarios({ temaClaro }) {
+export default function GestionUsuarios() {
+  const { temaClaro } = useApp();
+  const toast = useToast();
+
   const [usuarios, setUsuarios] = useState([]);
   const [busqueda, setBusqueda] = useState('');
   const [cargando, setCargando] = useState(false);
@@ -76,10 +80,10 @@ export default function GestionUsuarios({ temaClaro }) {
 
       setMostrarModalCrear(false);
       setFormCrear({ nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS' });
-      alert("Usuario creado exitosamente tanto en Authentication como en Firestore.");
+      toast.success("Usuario creado exitosamente en Authentication y Firestore.");
     } catch (err) {
       console.error("Error al registrar usuario:", err);
-      alert("Error al registrar: " + (err.code === 'auth/email-already-in-use' ? 'El correo ya está registrado en Authentication.' : err.message));
+      toast.error(err.code === 'auth/email-already-in-use' ? 'El correo ya está registrado.' : err.message);
     } finally {
       setCargando(false);
     }
@@ -100,8 +104,10 @@ export default function GestionUsuarios({ temaClaro }) {
       });
 
       setUsuarioEditar(null);
+      toast.success("Usuario actualizado correctamente.");
     } catch (err) {
       console.error("Error al editar usuario:", err);
+      toast.error("Error al actualizar usuario.");
     } finally {
       setCargando(false);
     }
@@ -114,8 +120,10 @@ export default function GestionUsuarios({ temaClaro }) {
         activo: nuevoEstado,
         estado: nuevoEstado ? 'activo' : 'inactivo'
       });
+      toast.info(`Usuario ${nuevoEstado ? 'activado' : 'desactivado'}.`);
     } catch (err) {
       console.error("Error al cambiar estado:", err);
+      toast.error("Error al modificar estado del usuario.");
     }
   };
 
@@ -123,8 +131,10 @@ export default function GestionUsuarios({ temaClaro }) {
     if (!window.confirm(`¿Seguro que deseas eliminar al usuario ${u.email} de la base de datos?`)) return;
     try {
       await deleteDoc(doc(db, "usuarios", u.id));
+      toast.info(`Usuario ${u.email} eliminado.`);
     } catch (err) {
       console.error("Error al eliminar usuario:", err);
+      toast.error("Error al eliminar usuario.");
     }
   };
 
@@ -155,6 +165,7 @@ export default function GestionUsuarios({ temaClaro }) {
         </div>
 
         <button
+          type="button"
           onClick={() => setMostrarModalCrear(true)}
           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition shadow-lg flex items-center gap-2 shrink-0"
         >
@@ -212,6 +223,7 @@ export default function GestionUsuarios({ temaClaro }) {
                 <td className="py-3.5 px-4 text-slate-400">{u.servicio || 'TODOS'}</td>
                 <td className="py-3.5 px-4 text-center">
                   <button
+                    type="button"
                     onClick={() => toggleEstadoActivo(u)}
                     className={`px-3 py-1 rounded-full text-[10px] font-extrabold transition flex items-center gap-1 mx-auto ${
                       u.activo !== false
@@ -225,6 +237,7 @@ export default function GestionUsuarios({ temaClaro }) {
                 </td>
                 <td className="py-3.5 px-4 text-right space-x-1">
                   <button
+                    type="button"
                     onClick={() => {
                       setUsuarioEditar(u);
                       setFormEditar({
@@ -240,6 +253,7 @@ export default function GestionUsuarios({ temaClaro }) {
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
                   <button
+                    type="button"
                     onClick={() => eliminarUsuario(u)}
                     className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition"
                     title="Eliminar usuario"
@@ -384,7 +398,7 @@ export default function GestionUsuarios({ temaClaro }) {
 
             <form onSubmit={handleGuardarEdicion} className="space-y-4">
               <div>
-                <p className="text-xs text-slate-400 mb-1">Correo: <strong className="text-white">{usuarioEditar.email}</strong></p>
+                <p className="text-xs text-slate-400 mb-1">Correo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{usuarioEditar.email}</strong></p>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Nombre Completo:</label>
                 <input
                   type="text"
@@ -438,7 +452,7 @@ export default function GestionUsuarios({ temaClaro }) {
                   onChange={(e) => setFormEditar({ ...formEditar, activo: e.target.checked })}
                   className="rounded bg-slate-800 border-slate-700"
                 />
-                <label htmlFor="chkActivo" className="text-xs font-bold text-slate-300">Cuenta Activa</label>
+                <label htmlFor="chkActivo" className={`text-xs font-bold ${temaClaro ? 'text-slate-700' : 'text-slate-300'}`}>Cuenta Activa</label>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
