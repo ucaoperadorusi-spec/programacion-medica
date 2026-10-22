@@ -55,6 +55,34 @@ export const useApp = () => {
 export const AppProvider = ({ children }) => {
   const toast = useToast();
 
+  // Detección de parámetros URL iniciales (Deep linking para Smart TVs)
+  const getParametrosIniciales = () => {
+    if (typeof window === 'undefined') return { servicio: 'CONSULTA_EXTERNA', tv: false };
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tvParam = params.get('tv');
+      const servicioParam = params.get('servicio');
+      let serv = 'CONSULTA_EXTERNA';
+      let tv = false;
+      if (tvParam !== null) {
+        tv = true;
+        const val = String(tvParam).toLowerCase();
+        if (val === 'emergencia' || val === 'emerg') serv = 'EMERGENCIA';
+        else if (val === 'consulta' || val === 'consulta_externa') serv = 'CONSULTA_EXTERNA';
+      }
+      if (servicioParam) {
+        const val = String(servicioParam).toLowerCase();
+        if (val === 'emergencia' || val === 'emerg') serv = 'EMERGENCIA';
+        else if (val === 'consulta' || val === 'consulta_externa') serv = 'CONSULTA_EXTERNA';
+      }
+      return { servicio: serv, tv };
+    } catch {
+      return { servicio: 'CONSULTA_EXTERNA', tv: false };
+    }
+  };
+
+  const paramsInit = useMemo(() => getParametrosIniciales(), []);
+
   // Estados Generales
   const [programacion, setProgramacion] = useState([]);
   const [comunicado, setComunicado] = useState("Bienvenido al H. II PUCALLPA. Recuerde presentar su documento de identidad.");
@@ -62,11 +90,40 @@ export const AppProvider = ({ children }) => {
   const [cargando, setCargando] = useState(false);
   const [soloTurnoActual, setSoloTurnoActual] = useState(false);
   const [vistaActiva, setVistaActiva] = useState('MONITOR');
-  const [servicioActivo, setServicioActivo] = useState('CONSULTA_EXTERNA');
+  const [servicioActivo, setServicioActivo] = useState(paramsInit.servicio);
   const [temaClaro, setTemaClaro] = useState(false);
 
-  // Módulos
-  const [modulosSeleccionados, setModulosSeleccionados] = useState([]);
+  // Módulos independientes por canal con persistencia en localStorage
+  const [modulosSeleccionadosConsulta, setModulosSeleccionadosConsulta] = useState(() => {
+    try {
+      const guardados = localStorage.getItem('modulos_consulta');
+      return guardados ? JSON.parse(guardados) : [];
+    } catch { return []; }
+  });
+
+  const [modulosSeleccionadosEmergencia, setModulosSeleccionadosEmergencia] = useState(() => {
+    try {
+      const guardados = localStorage.getItem('modulos_emergencia');
+      return guardados ? JSON.parse(guardados) : [];
+    } catch { return []; }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('modulos_consulta', JSON.stringify(modulosSeleccionadosConsulta));
+    } catch {}
+  }, [modulosSeleccionadosConsulta]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('modulos_emergencia', JSON.stringify(modulosSeleccionadosEmergencia));
+    } catch {}
+  }, [modulosSeleccionadosEmergencia]);
+
+  const modulosSeleccionados = useMemo(() => {
+    return servicioActivo === 'EMERGENCIA' ? modulosSeleccionadosEmergencia : modulosSeleccionadosConsulta;
+  }, [servicioActivo, modulosSeleccionadosEmergencia, modulosSeleccionadosConsulta]);
+
   const [mostrarModalModulos, setMostrarModalModulos] = useState(false);
 
   // Estados de Usuario & Autenticación
@@ -117,7 +174,7 @@ export const AppProvider = ({ children }) => {
   const [filaExpandidaAuditoria, setFilaExpandidaAuditoria] = useState(null);
 
   // Modo TV
-  const [modoTvActivo, setModoTvActivo] = useState(false);
+  const [modoTvActivo, setModoTvActivo] = useState(paramsInit.tv);
   const [indiceRotacionTv, setIndiceRotacionTv] = useState(0);
   const [cicloTv, setCicloTv] = useState(0);
   const mainScrollRef = useRef(null);
@@ -182,18 +239,35 @@ export const AppProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Módulos disponibles
+  // Módulos disponibles estrictamente filtrados por el servicio activo
   const todosLosModulosDisponibles = useMemo(() => {
+    const filtrados = programacion.filter(item => {
+      const esEmerg = item.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(item.Area, item.Rol);
+      return servicioActivo === 'EMERGENCIA' ? esEmerg : !esEmerg;
+    });
     return Array.from(
-      new Set(programacion.map(item => item.Modulo || "Módulo General"))
+      new Set(filtrados.map(item => item.Modulo || "Módulo General"))
     ).sort();
-  }, [programacion]);
+  }, [programacion, servicioActivo]);
 
+  // Sincronización automática de módulos por canal
   useEffect(() => {
-    if (todosLosModulosDisponibles.length > 0 && modulosSeleccionados.length === 0) {
-      setModulosSeleccionados(todosLosModulosDisponibles);
+    if (todosLosModulosDisponibles.length === 0) return;
+
+    if (servicioActivo === 'EMERGENCIA') {
+      setModulosSeleccionadosEmergencia(prev => {
+        if (prev.length === 0) return todosLosModulosDisponibles;
+        const validos = prev.filter(m => todosLosModulosDisponibles.includes(m));
+        return validos.length > 0 ? validos : todosLosModulosDisponibles;
+      });
+    } else {
+      setModulosSeleccionadosConsulta(prev => {
+        if (prev.length === 0) return todosLosModulosDisponibles;
+        const validos = prev.filter(m => todosLosModulosDisponibles.includes(m));
+        return validos.length > 0 ? validos : todosLosModulosDisponibles;
+      });
     }
-  }, [todosLosModulosDisponibles]);
+  }, [todosLosModulosDisponibles, servicioActivo]);
 
   // Suscripción a Lista de Espera (optimizada para hoy)
   useEffect(() => {
@@ -297,10 +371,15 @@ export const AppProvider = ({ children }) => {
 
   // Rotación Automática en Modo TV
   const medicoLlamandoEnVivo = useMemo(() => {
-    return programacion.find(
-      p => p.estado === 'LLAMANDO' && p.pacienteLlamado && modulosSeleccionados.includes(p.Modulo || "Módulo General")
-    );
-  }, [programacion, modulosSeleccionados]);
+    return programacion.find(p => {
+      if (p.estado !== 'LLAMANDO' || !p.pacienteLlamado) return false;
+      const esEmerg = p.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(p.Area, p.Rol);
+      const coincideServicio = (servicioActivo === 'EMERGENCIA' && esEmerg) || 
+                               (servicioActivo === 'CONSULTA_EXTERNA' && !esEmerg);
+      if (!coincideServicio) return false;
+      return modulosSeleccionados.includes(p.Modulo || "Módulo General");
+    });
+  }, [programacion, servicioActivo, modulosSeleccionados]);
 
   const moduloActualTv = modoTvActivo && modulosSeleccionados.length > 0 
     ? modulosSeleccionados[indiceRotacionTv % modulosSeleccionados.length] 
@@ -1172,7 +1251,8 @@ export const AppProvider = ({ children }) => {
         await batch.commit();
       }
 
-      setModulosSeleccionados([]);
+      setModulosSeleccionadosConsulta([]);
+      setModulosSeleccionadosEmergencia([]);
       toast.success("Toda la programación fue eliminada correctamente.");
     } catch (err) {
       console.error("Error al limpiar base de datos:", err);
@@ -1221,7 +1301,8 @@ export const AppProvider = ({ children }) => {
         });
 
         const colRef = collection(db, "programacion_medica");
-        const modulosDetectados = new Set();
+        const modulosDetectadosEmergencia = new Set();
+        const modulosDetectadosConsulta = new Set();
         const listaDuplicados = [];
         const registrosParaInsertar = [];
         const ahoraIso = new Date().toISOString();
@@ -1277,7 +1358,7 @@ export const AppProvider = ({ children }) => {
           const tipoServicioFinal = esEmerg ? 'EMERGENCIA' : 'CONSULTA_EXTERNA';
 
           if (medico !== "Sin Nombre" || area !== "General") {
-            const claveUnica = `${String(medico).trim().toLowerCase()}_${fechaFormateada}_${String(hInicio).trim()}_${String(hFin).trim()}_${String(rol).trim().toLowerCase()}`;
+            const claveUnica = `${tipoServicioFinal}_${String(medico).trim().toLowerCase()}_${fechaFormateada}_${String(hInicio).trim()}_${String(hFin).trim()}_${String(rol).trim().toLowerCase()}`;
 
             if (clavesProcesadas.has(claveUnica)) {
               listaDuplicados.push({
@@ -1290,7 +1371,11 @@ export const AppProvider = ({ children }) => {
               });
             } else {
               clavesProcesadas.add(claveUnica);
-              modulosDetectados.add(modulo);
+              if (tipoServicioFinal === 'EMERGENCIA') {
+                modulosDetectadosEmergencia.add(modulo);
+              } else {
+                modulosDetectadosConsulta.add(modulo);
+              }
               registrosParaInsertar.push({
                 Modulo: modulo,
                 Area: String(area).trim(),
@@ -1319,9 +1404,11 @@ export const AppProvider = ({ children }) => {
           await batch.commit();
         }
 
-        const listaNuevosModulos = Array.from(modulosDetectados).sort();
-        if (listaNuevosModulos.length > 0) {
-          setModulosSeleccionados(listaNuevosModulos);
+        if (modulosDetectadosEmergencia.size > 0) {
+          setModulosSeleccionadosEmergencia(Array.from(modulosDetectadosEmergencia).sort());
+        }
+        if (modulosDetectadosConsulta.size > 0) {
+          setModulosSeleccionadosConsulta(Array.from(modulosDetectadosConsulta).sort());
         }
 
         if (listaDuplicados.length > 0) {
@@ -1344,17 +1431,52 @@ export const AppProvider = ({ children }) => {
     reader.readAsArrayBuffer(file);
   };
 
-  // Selector de Módulos
+  // Selector de Módulos por Canal
   const toggleModuloSeleccionado = (mod) => {
-    if (modulosSeleccionados.includes(mod)) {
-      setModulosSeleccionados(modulosSeleccionados.filter(m => m !== mod));
+    if (servicioActivo === 'EMERGENCIA') {
+      setModulosSeleccionadosEmergencia(prev =>
+        prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]
+      );
     } else {
-      setModulosSeleccionados([...modulosSeleccionados, mod]);
+      setModulosSeleccionadosConsulta(prev =>
+        prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]
+      );
     }
   };
 
-  const seleccionarTodosLosModulos = () => setModulosSeleccionados([...todosLosModulosDisponibles]);
-  const deseleccionarTodosLosModulos = () => setModulosSeleccionados([]);
+  const seleccionarTodosLosModulos = () => {
+    if (servicioActivo === 'EMERGENCIA') {
+      setModulosSeleccionadosEmergencia([...todosLosModulosDisponibles]);
+    } else {
+      setModulosSeleccionadosConsulta([...todosLosModulosDisponibles]);
+    }
+  };
+
+  const deseleccionarTodosLosModulos = () => {
+    if (servicioActivo === 'EMERGENCIA') {
+      setModulosSeleccionadosEmergencia([]);
+    } else {
+      setModulosSeleccionadosConsulta([]);
+    }
+  };
+
+  // Copiar Enlace Directo para Smart TVs de Sala de Espera
+  const copiarEnlaceTv = () => {
+    try {
+      const origin = window.location.origin;
+      const pathname = window.location.pathname;
+      const servParam = servicioActivo === 'EMERGENCIA' ? 'emergencia' : 'consulta';
+      const enlace = `${origin}${pathname}?tv=${servParam}`;
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(enlace);
+        toast.success(`Enlace Smart TV (${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta'}) copiado al portapapeles.`);
+      } else {
+        toast.info(`Enlace directo TV: ${enlace}`);
+      }
+    } catch {
+      toast.warn("No se pudo copiar el enlace.");
+    }
+  };
 
   // Agrupación y filtrado de programación médica
   const programacionAgrupada = useMemo(() => {
@@ -1365,13 +1487,16 @@ export const AppProvider = ({ children }) => {
       programacion.forEach((item) => {
         if (item.Fecha && item.Fecha !== fechaHoy) return;
 
+        const esEmerg = item.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(item.Area, item.Rol);
+        const tipoServicioFinal = esEmerg ? 'EMERGENCIA' : 'CONSULTA_EXTERNA';
         const nombreMedico = (item.Medico || "Sin Nombre").toLowerCase().trim();
-        const key = `${item.Modulo || "Módulo General"}_${item.Area || "General"}_${nombreMedico}`;
+        const key = `${tipoServicioFinal}_${item.Modulo || "Módulo General"}_${item.Area || "General"}_${nombreMedico}`;
         const rolLimpio = item.Rol || "Consulta Médica";
 
         if (!mapaMedicos.has(key)) {
           mapaMedicos.set(key, {
             ...item,
+            TipoServicio: tipoServicioFinal,
             Rol: rolLimpio,
             rolesLista: [rolLimpio],
             ids: [item.id],
@@ -1576,6 +1701,7 @@ export const AppProvider = ({ children }) => {
     moduloActualTv,
     medicoLlamandoEnVivo,
     mainScrollRef,
+    copiarEnlaceTv,
 
     // Configuración & Cálculos Médicos
     ESTADOS_MEDICO,

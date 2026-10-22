@@ -893,6 +893,7 @@ export function ModalModulos() {
     mostrarModalModulos,
     setMostrarModalModulos,
     temaClaro,
+    servicioActivo,
     seleccionarTodosLosModulos,
     deseleccionarTodosLosModulos,
     todosLosModulosDisponibles,
@@ -902,16 +903,23 @@ export function ModalModulos() {
 
   if (!mostrarModalModulos) return null;
 
+  const esEmerg = servicioActivo === 'EMERGENCIA';
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
       <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
         temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
       }`}>
         <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
-          <h3 className="text-lg font-bold flex items-center gap-2">
-            <SlidersHorizontal className="w-5 h-5 text-cyan-500" />
-            Seleccionar Módulos
-          </h3>
+          <div>
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <SlidersHorizontal className="w-5 h-5 text-cyan-500" />
+              Seleccionar Módulos
+            </h3>
+            <p className={`text-xs font-semibold mt-0.5 ${esEmerg ? 'text-rose-400' : 'text-cyan-400'}`}>
+              Canal activo: {esEmerg ? 'Emergencia 24H (Tópicos / Triaje)' : 'Consulta Externa (Consultorios)'}
+            </p>
+          </div>
           <button type="button" onClick={() => setMostrarModalModulos(false)} className="text-slate-400 hover:text-slate-200">
             <X className="w-5 h-5" />
           </button>
@@ -921,7 +929,11 @@ export function ModalModulos() {
           <button
             type="button"
             onClick={seleccionarTodosLosModulos}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-cyan-500/20 text-cyan-500 border border-cyan-500/30 hover:bg-cyan-500/30 transition"
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl border transition ${
+              esEmerg 
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/30 hover:bg-rose-500/30' 
+                : 'bg-cyan-500/20 text-cyan-500 border-cyan-500/30 hover:bg-cyan-500/30'
+            }`}
           >
             <CheckSquare className="w-4 h-4" /> Seleccionar Todos
           </button>
@@ -935,30 +947,44 @@ export function ModalModulos() {
         </div>
 
         <div className="max-h-60 overflow-y-auto space-y-2 pr-1 mb-6">
-          {todosLosModulosDisponibles.map((mod, i) => {
-            const seleccionado = modulosSeleccionados.includes(mod);
-            return (
-              <label
-                key={i}
-                onClick={() => toggleModuloSeleccionado(mod)}
-                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
-                  seleccionado
-                    ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
-                    : temaClaro ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-slate-800/40 border-slate-800 text-slate-400'
-                }`}
-              >
-                <span className="text-xs font-bold">{mod}</span>
-                {seleccionado ? <CheckSquare className="w-4 h-4 text-cyan-400" /> : <Square className="w-4 h-4 text-slate-500" />}
-              </label>
-            );
-          })}
+          {todosLosModulosDisponibles.length === 0 ? (
+            <p className="text-xs text-slate-400 italic py-6 text-center">
+              No hay módulos registrados en este momento para {esEmerg ? 'Emergencia' : 'Consulta Externa'}.
+            </p>
+          ) : (
+            todosLosModulosDisponibles.map((mod, i) => {
+              const seleccionado = modulosSeleccionados.includes(mod);
+              return (
+                <label
+                  key={i}
+                  onClick={() => toggleModuloSeleccionado(mod)}
+                  className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition ${
+                    seleccionado
+                      ? esEmerg
+                        ? 'bg-rose-500/10 border-rose-500/40 text-rose-400'
+                        : 'bg-cyan-500/10 border-cyan-500/40 text-cyan-400'
+                      : temaClaro ? 'bg-slate-50 border-slate-200 text-slate-700' : 'bg-slate-800/40 border-slate-800 text-slate-400'
+                  }`}
+                >
+                  <span className="text-xs font-bold">{mod}</span>
+                  {seleccionado ? (
+                    <CheckSquare className={`w-4 h-4 ${esEmerg ? 'text-rose-400' : 'text-cyan-400'}`} />
+                  ) : (
+                    <Square className="w-4 h-4 text-slate-500" />
+                  )}
+                </label>
+              );
+            })
+          )}
         </div>
 
         <div className="flex justify-end">
           <button
             type="button"
             onClick={() => setMostrarModalModulos(false)}
-            className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500 transition shadow-lg"
+            className={`px-5 py-2 rounded-xl text-xs font-bold text-white transition shadow-lg ${
+              esEmerg ? 'bg-rose-600 hover:bg-rose-500' : 'bg-blue-600 hover:bg-blue-500'
+            }`}
           >
             Listo
           </button>
