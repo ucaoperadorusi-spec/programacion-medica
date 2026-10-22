@@ -28,6 +28,7 @@ export default function Header() {
   const {
     servicioActivo,
     setServicioActivo,
+    servicioPermitidoUsuario,
     vistaActiva,
     setVistaActiva,
     rolUsuario,
@@ -89,11 +90,11 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Selector de Vistas / Pestañas Principales */}
+      {/* Selector de Vistas / Pestañas Principales (Filtradas estrictamente por permiso de área) */}
       <div className={`flex p-1 rounded-2xl border transition ${
         temaClaro ? 'bg-slate-100 border-slate-300' : 'bg-slate-800/80 border-slate-700'
       }`}>
-        {rolUsuario !== 'ADMISION' && (
+        {rolUsuario !== 'ADMISION' && (servicioPermitidoUsuario === 'TODOS' || servicioPermitidoUsuario === 'CONSULTA_EXTERNA' || rolUsuario === 'ADMIN') && (
           <button
             type="button"
             onClick={() => { setVistaActiva('MONITOR'); setServicioActivo('CONSULTA_EXTERNA'); }}
@@ -108,18 +109,20 @@ export default function Header() {
           </button>
         )}
 
-        <button
-          type="button"
-          onClick={() => { setVistaActiva('MONITOR'); setServicioActivo('EMERGENCIA'); }}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
-            vistaActiva === 'MONITOR' && servicioActivo === 'EMERGENCIA'
-              ? 'bg-rose-600 text-white shadow-lg'
-              : temaClaro ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <Siren className="w-4 h-4 text-rose-400" />
-          <span>Emergencia</span>
-        </button>
+        {(servicioPermitidoUsuario === 'TODOS' || servicioPermitidoUsuario === 'EMERGENCIA' || rolUsuario === 'ADMIN') && (
+          <button
+            type="button"
+            onClick={() => { setVistaActiva('MONITOR'); setServicioActivo('EMERGENCIA'); }}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              vistaActiva === 'MONITOR' && servicioActivo === 'EMERGENCIA'
+                ? 'bg-rose-600 text-white shadow-lg'
+                : temaClaro ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Siren className="w-4 h-4 text-rose-400" />
+            <span>Emergencia</span>
+          </button>
+        )}
 
         {rolUsuario === 'ADMIN' && (
           <button
@@ -210,7 +213,7 @@ export default function Header() {
                 : 'bg-cyan-500/20 text-cyan-600 border-cyan-400 animate-pulse' 
               : temaClaro ? 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200' : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
           }`}
-          title={`Activar rotación TV independiente para ${servicioActivo === 'EMERGENCIA' ? 'Emergencia 24H' : 'Consulta Externa'}`}
+          title={`Activar rotación TV independiente para ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta Externa'}`}
         >
           <Tv className={`w-4 h-4 ${modoTvActivo ? (servicioActivo === 'EMERGENCIA' ? 'text-rose-500' : 'text-cyan-500') : 'text-cyan-500'}`} />
           <span>{modoTvActivo ? `TV ${servicioActivo === 'EMERGENCIA' ? 'Emergencia' : 'Consulta'}` : "Modo TV"}</span>

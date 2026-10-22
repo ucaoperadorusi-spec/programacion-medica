@@ -19,6 +19,60 @@ export const escapeHtml = (unsafeStr) => {
     .replace(/'/g, "&#039;");
 };
 
+// Parser específico para el Excel de Citados de Consulta Externa
+// Columnas reconocidas: Orden | H.A. | Apellidos y Nombres Paciente | Situacion
+export const parseExcelCitasConsultaExterna = (jsonData) => {
+  const citas = [];
+  if (!Array.isArray(jsonData)) return citas;
+
+  jsonData.forEach((item, index) => {
+    // 1. Número de Orden
+    const ordenRaw = getFieldValue(item, ['orden', 'nro', 'numero', 'n_orden', 'item', 'n°']);
+    const orden = Number(ordenRaw) || (index + 1);
+
+    // 2. Hora de Atención (H.A.)
+    const horaRaw = getFieldValue(item, ['h.a.', 'ha', 'h.a', 'hora', 'hora_atencion', 'horario', 'hora atencion']);
+    let horaFormateada = '--:--';
+    if (horaRaw !== null && horaRaw !== undefined) {
+      if (typeof horaRaw === 'number') {
+        // En Excel a veces la hora se almacena como fracción del día (ej 0.2916666 = 07:00)
+        const totalMinutes = Math.round(horaRaw * 24 * 60);
+        const hours = Math.floor(totalMinutes / 60) % 24;
+        const minutes = totalMinutes % 60;
+        horaFormateada = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      } else {
+        horaFormateada = String(horaRaw).trim();
+      }
+    }
+
+    // 3. Apellidos y Nombres del Paciente
+    const pacienteRaw = getFieldValue(item, [
+      'apellidos y nombres paciente',
+      'apellidos y nombres',
+      'paciente',
+      'nombres y apellidos',
+      'nombre',
+      'apellidosynombrespaciente'
+    ]);
+    const paciente = pacienteRaw ? String(pacienteRaw).trim().toUpperCase() : '';
+
+    // 4. Situación inicial (por defecto PENDIENTE)
+    const situacionRaw = getFieldValue(item, ['situacion', 'situación', 'estado', 'condicion']);
+    const situacion = situacionRaw ? String(situacionRaw).trim().toUpperCase() : 'PENDIENTE';
+
+    if (paciente && paciente !== 'SIN NOMBRE') {
+      citas.push({
+        orden,
+        horaAtencion: horaFormateada,
+        paciente,
+        situacion: situacion || 'PENDIENTE'
+      });
+    }
+  });
+
+  return citas;
+};
+
 export const generarReporteExcelAuditoria = (historialFiltrado, servicioActivo) => {
   if (!historialFiltrado || historialFiltrado.length === 0) {
     return false;
@@ -98,8 +152,9 @@ export const generarReporteExcelAuditoria = (historialFiltrado, servicioActivo) 
     let estadoLimpio = (item.estadoFinal || '').replace(/_/g, ' ');
     if (item.estadoFinal === 'DADO_DE_BAJA') estadoLimpio = 'INASISTENCIA';
 
+    const esConsultaExterna = (item.servicio || '').toUpperCase() === 'CONSULTA_EXTERNA';
     const objTriaje = OpcionesTriaje.find(t => t.id === item.nivelTriaje);
-    const textoTriajeExcel = objTriaje ? objTriaje.label : 'S/N';
+    const textoTriajeExcel = esConsultaExterna ? 'CITA PROGRAMADA' : (objTriaje ? objTriaje.label : 'S/N');
 
     const trazabilidadTexto = item.eventos
       .map((e, idx) => `Paso ${idx + 1}: ${escapeHtml(e.horaFormateada)} ➜ [${escapeHtml((e.estado || '').replace(/_/g, ' '))}]`)

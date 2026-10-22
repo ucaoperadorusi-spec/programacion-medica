@@ -14,7 +14,7 @@ import { useApp } from '../context/AppContext';
 import { useToast } from './Toast';
 
 export default function GestionUsuarios() {
-  const { temaClaro } = useApp();
+  const { temaClaro, programacion } = useApp();
   const toast = useToast();
 
   const [usuarios, setUsuarios] = useState([]);
@@ -24,18 +24,26 @@ export default function GestionUsuarios() {
   const [mostrarModalCrear, setMostrarModalCrear] = useState(false);
   const [usuarioEditar, setUsuarioEditar] = useState(null);
 
+  // Lista de médicos extraídos de la programación para enrolar usuarios
+  const medicosDisponibles = React.useMemo(() => {
+    if (!Array.isArray(programacion)) return [];
+    return Array.from(new Set(programacion.map(p => p.Medico).filter(Boolean))).sort();
+  }, [programacion]);
+
   const [formCrear, setFormCrear] = useState({
     nombre: '',
     email: '',
     password: '',
     rol: 'OPERADOR',
-    servicio: 'TODOS'
+    servicio: 'TODOS',
+    medicoAsignado: ''
   });
 
   const [formEditar, setFormEditar] = useState({
     nombre: '',
     rol: 'OPERADOR',
     servicio: 'TODOS',
+    medicoAsignado: '',
     activo: true
   });
 
@@ -73,13 +81,14 @@ export default function GestionUsuarios() {
         email: emailClean,
         rol: formCrear.rol,
         servicio: formCrear.servicio,
+        medicoAsignado: formCrear.rol === 'MEDICO' ? (formCrear.medicoAsignado || '') : '',
         activo: true,
         estado: 'activo',
         fechaCreacion: new Date().toISOString()
       });
 
       setMostrarModalCrear(false);
-      setFormCrear({ nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS' });
+      setFormCrear({ nombre: '', email: '', password: '', rol: 'OPERADOR', servicio: 'TODOS', medicoAsignado: '' });
       toast.success("Usuario creado exitosamente en Authentication y Firestore.");
     } catch (err) {
       console.error("Error al registrar usuario:", err);
@@ -99,6 +108,7 @@ export default function GestionUsuarios() {
         nombre: formEditar.nombre.trim(),
         rol: formEditar.rol,
         servicio: formEditar.servicio,
+        medicoAsignado: formEditar.rol === 'MEDICO' ? (formEditar.medicoAsignado || '') : '',
         activo: formEditar.activo,
         estado: formEditar.activo ? 'activo' : 'inactivo'
       });
@@ -208,7 +218,14 @@ export default function GestionUsuarios() {
           <tbody className="divide-y divide-slate-800/40 text-xs font-medium">
             {usuariosFiltrados.map((u) => (
               <tr key={u.id} className={temaClaro ? 'hover:bg-slate-50' : 'hover:bg-slate-800/30'}>
-                <td className="py-3.5 px-4 font-bold">{u.nombre || 'Sin nombre'}</td>
+                <td className="py-3.5 px-4 font-bold">
+                  <div>{u.nombre || 'Sin nombre'}</div>
+                  {u.rol === 'MEDICO' && u.medicoAsignado && (
+                    <div className="text-[10px] font-normal text-cyan-400 flex items-center gap-1 mt-0.5">
+                      <span>🩺 Médico: {u.medicoAsignado}</span>
+                    </div>
+                  )}
+                </td>
                 <td className="py-3.5 px-4 font-mono text-slate-400">{u.email}</td>
                 <td className="py-3.5 px-4">
                   <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border ${
@@ -220,7 +237,15 @@ export default function GestionUsuarios() {
                     {u.rol || 'OPERADOR'}
                   </span>
                 </td>
-                <td className="py-3.5 px-4 text-slate-400">{u.servicio || 'TODOS'}</td>
+                <td className="py-3.5 px-4">
+                  <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase border ${
+                    u.servicio === 'EMERGENCIA' ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' :
+                    u.servicio === 'CONSULTA_EXTERNA' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
+                    'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}>
+                    {u.servicio === 'CONSULTA_EXTERNA' ? 'Consulta Externa' : u.servicio || 'TODOS'}
+                  </span>
+                </td>
                 <td className="py-3.5 px-4 text-center">
                   <button
                     type="button"
@@ -244,6 +269,7 @@ export default function GestionUsuarios() {
                         nombre: u.nombre || '',
                         rol: u.rol || 'OPERADOR',
                         servicio: u.servicio || 'TODOS',
+                        medicoAsignado: u.medicoAsignado || '',
                         activo: u.activo !== false
                       });
                     }}
@@ -359,6 +385,29 @@ export default function GestionUsuarios() {
                 </div>
               </div>
 
+              {formCrear.rol === 'MEDICO' && (
+                <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-1.5">
+                  <label className="block text-xs font-bold text-cyan-400">
+                    🩺 Médico Asignado (Carta de Presentación):
+                  </label>
+                  <select
+                    value={formCrear.medicoAsignado || ''}
+                    onChange={(e) => setFormCrear({ ...formCrear, medicoAsignado: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none ${
+                      temaClaro ? 'bg-white border-slate-300' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  >
+                    <option value="">-- Seleccionar Médico de la Programación --</option>
+                    {medicosDisponibles.map((m, idx) => (
+                      <option key={idx} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400">
+                    Este usuario solo podrá gestionar y llamar pacientes en el consultorio de este médico.
+                  </p>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
                 <button
                   type="button"
@@ -443,6 +492,29 @@ export default function GestionUsuarios() {
                   </select>
                 </div>
               </div>
+
+              {formEditar.rol === 'MEDICO' && (
+                <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-1.5">
+                  <label className="block text-xs font-bold text-cyan-400">
+                    🩺 Médico Asignado (Carta de Presentación):
+                  </label>
+                  <select
+                    value={formEditar.medicoAsignado || ''}
+                    onChange={(e) => setFormEditar({ ...formEditar, medicoAsignado: e.target.value })}
+                    className={`w-full px-3 py-2 rounded-xl border text-xs focus:outline-none ${
+                      temaClaro ? 'bg-white border-slate-300' : 'bg-slate-800 border-slate-700 text-white'
+                    }`}
+                  >
+                    <option value="">-- Seleccionar Médico de la Programación --</option>
+                    {medicosDisponibles.map((m, idx) => (
+                      <option key={idx} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-slate-400">
+                    Este usuario solo podrá gestionar y llamar pacientes en el consultorio de este médico.
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 pt-2">
                 <input

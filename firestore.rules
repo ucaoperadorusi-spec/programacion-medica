@@ -1,94 +1,98 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
+    // Funciones auxiliares
+    function estaAutenticado() {
       return request.auth != null;
     }
 
-    function userEmail() {
+    function correoUsuario() {
       return request.auth.token.email.lower();
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/usuarios/$(userEmail())).data;
+    function existeDocUsuario() {
+      return estaAutenticado() && exists(/databases/$(database)/documents/usuarios/$(correoUsuario()));
     }
 
-    function hasRole(role) {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/usuarios/$(userEmail())) &&
-             getUserData().activo != false &&
-             getUserData().rol == role;
+    function obtenerDatosUsuario() {
+      return get(/databases/$(database)/documents/usuarios/$(correoUsuario())).data;
     }
 
-    function isAdmin() {
-      return hasRole('ADMIN');
+    function tieneRol(rolEsperado) {
+      return existeDocUsuario() &&
+             obtenerDatosUsuario().activo != false &&
+             obtenerDatosUsuario().rol == rolEsperado;
     }
 
-    function isOperador() {
-      return hasRole('OPERADOR') || isAdmin();
+    function esAdmin() {
+      return tieneRol('ADMIN');
     }
 
-    function isAdmision() {
-      return hasRole('ADMISION') || isAdmin();
+    function esOperador() {
+      return tieneRol('OPERADOR') || esAdmin();
     }
 
-    function isMedico() {
-      return hasRole('MEDICO') || isAdmin();
+    function esAdmision() {
+      return tieneRol('ADMISION') || esAdmin();
     }
 
-    function canModifySchedules() {
-      return isAuthenticated() && 
-             exists(/databases/$(database)/documents/usuarios/$(userEmail())) &&
-             getUserData().activo != false &&
-             (getUserData().rol in ['ADMIN', 'OPERADOR', 'ADMISION', 'MEDICO']);
+    function esMedico() {
+      return tieneRol('MEDICO') || esAdmin();
     }
 
-    // 1. Colección usuarios: Solo admins administran usuarios; usuarios nuevos por Google solo pueden registrarse con rol OPERADOR
-    match /usuarios/{emailDoc} {
-      allow read: if isAuthenticated();
-      allow create: if isAdmin() || (
-        isAuthenticated() && 
-        userEmail() == emailDoc.lower() && 
-        request.resource.data.rol == 'OPERADOR' &&
-        request.resource.data.email.lower() == userEmail()
-      );
-      allow update, delete: if isAdmin();
+    function puedeModificarAtenciones() {
+      return existeDocUsuario() &&
+             obtenerDatosUsuario().activo != false &&
+             (obtenerDatosUsuario().rol in ['ADMIN', 'OPERADOR', 'ADMISION', 'MEDICO']);
     }
 
-    // 2. Programación médica: Lectura pública (para pantalla TV), escritura restringida por roles
-    match /programacion_medica/{docId} {
+    // 1. USUARIOS (Gestión de perfiles)
+    match /usuarios/{userId} {
       allow read: if true;
-      allow create, delete: if isAdmin() || isOperador();
-      allow update: if canModifySchedules();
+      allow create: if estaAutenticado();
+      allow update, delete: if esAdmin();
     }
 
-    // 3. Lista de espera (Admisión / Triaje)
-    match /lista_espera/{docId} {
+    // 2. PROGRAMACIÓN MÉDICA (Pantalla TV y Consultorios)
+    match /programacion_medica/{documentId} {
       allow read: if true;
-      allow create, update: if canModifySchedules();
-      allow delete: if isAdmin() || isAdmision();
+      allow create, delete: if esAdmin() || esOperador();
+      allow update: if puedeModificarAtenciones();
     }
 
-    // 4. Historial de llamadas y auditoría
-    match /historial_llamados/{docId} {
+    // 3. LISTA DE ESPERA (Triaje y Cola de espera)
+    match /lista_espera/{documentId} {
       allow read: if true;
-      allow create: if canModifySchedules();
-      allow update, delete: if isAdmin();
+      allow create, update: if puedeModificarAtenciones();
+      allow delete: if esAdmin() || esAdmision();
     }
 
-    // 5. Registro de pacientes atendidos / inasistencia
-    match /pacientes_medico/{docId} {
+    // 4. HISTORIAL DE AUDITORÍA Y LLAMADOS
+    match /historial_llamados/{documentId} {
       allow read: if true;
-      allow create: if canModifySchedules();
-      allow update, delete: if isAdmin();
+      allow create, update: if puedeModificarAtenciones();
+      allow delete: if esAdmin();
     }
 
-    // 6. Configuración global (comunicados, anuncios en cintillo)
-    match /configuracion/{docId} {
+    // 5. REGISTRO DE ATENCIONES Y PACIENTES
+    match /pacientes_medico/{documentId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, update: if puedeModificarAtenciones();
+      allow delete: if esAdmin();
+    }
+
+    // 6. CITAS DE CONSULTA EXTERNA (Pacientes citados del día y adicionales)
+    match /citas_consulta_externa/{documentId} {
+      allow read: if true;
+      allow create, update, delete: if puedeModificarAtenciones();
+    }
+
+    // 7. CONFIGURACIÓN (Comunicado de cabecera)
+    match /configuracion/{documentId} {
+      allow read: if true;
+      allow write: if esAdmin();
     }
   }
 }

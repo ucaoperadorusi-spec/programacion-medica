@@ -50,17 +50,37 @@ export const estaEnUltimaHora = (horariosArray, horaActual = new Date()) => {
   });
 };
 
-export const calcularEstadoInteligente = (med, estaActivoAhora, horaActual) => {
+// Verifica si faltan hasta 60 minutos (1 hora) antes del inicio del turno programado
+export const estaEnVentanaAnticipada = (horariosArray, horaActual = new Date()) => {
+  if (!horariosArray || horariosArray.length === 0) return false;
+  const ahora = horaActual.getHours() * 60 + horaActual.getMinutes();
+
+  return horariosArray.some(h => {
+    if (!h.inicio || h.inicio === "--:--" || !h.fin || h.fin === "--:--") return false;
+    const inicioMin = obtenerMinutos(h.inicio);
+    let difInicio = inicioMin - ahora;
+    if (difInicio < 0) difInicio += 1440;
+    return difInicio <= 60 && difInicio > 0;
+  });
+};
+
+export const calcularEstadoInteligente = (med, estaActivoAhora, horaActual = new Date()) => {
   if (!med.horarios || med.horarios.length === 0) return med.estado || "CONSULTA";
 
   const todosPasados = med.horarios.every(h => obtenerEstadoHorario(h, horaActual) === 'PASADO');
   if (todosPasados) return "CULMINADO";
 
+  // Si faltan hasta 60 minutos para iniciar y activó CONSULTA:
+  const enAnticipada = estaEnVentanaAnticipada(med.horarios, horaActual);
+  if (enAnticipada && med.estado === 'CONSULTA') {
+    return "CONSULTA";
+  }
+
   if (estaActivoAhora) {
     if (med.estado === "CULMINADO" && estaEnUltimaHora(med.horarios, horaActual)) {
       return "CULMINADO";
     }
-    if (med.estado === "PROGRAMADO" || med.estado === "CULMINADO") return "CONSULTA";
+    if (med.estado === "PROGRAMADO") return "CONSULTA";
     return med.estado || "CONSULTA";
   }
 

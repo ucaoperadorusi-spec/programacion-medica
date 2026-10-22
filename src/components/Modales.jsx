@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   X, History, Download, Search, AlertCircle, Check, LogIn, 
   UserMinus, Clock, ChevronUp, ChevronDown, UserPlus, Plus, 
-  SlidersHorizontal, CheckSquare, Square, Lock, Megaphone, Pencil 
+  SlidersHorizontal, CheckSquare, Square, Lock, Megaphone, Pencil,
+  Upload, FileSpreadsheet
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { OpcionesTriaje } from '../constants';
@@ -365,7 +366,7 @@ export function ModalLlamadaPaciente() {
         <div className="flex justify-between items-center pb-4 border-b border-slate-200 dark:border-slate-800 mb-4">
           <h3 className="text-lg font-bold flex items-center gap-2 text-rose-500">
             <Clock className="w-5 h-5 text-rose-500 animate-bounce" />
-            Llamado Manual a Pantalla TV
+            {servicioActivo === 'EMERGENCIA' ? 'Llamado Manual a Pantalla TV' : 'Llamado a Pantalla TV (Consulta Externa)'}
           </h3>
           <button type="button" onClick={() => setMedicoParaLlamar(null)} className="text-slate-400 hover:text-slate-200">
             <X className="w-5 h-5" />
@@ -429,24 +430,34 @@ export function ModalLlamadaPaciente() {
               Médico a cargo: <strong className={temaClaro ? 'text-slate-800' : 'text-white'}>{medicoParaLlamar.Medico}</strong>
             </p>
 
-            <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad de Emergencia:</label>
-            <div className="space-y-1.5 mb-4">
-              {OpcionesTriaje.map(t => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setNivelTriaje(t.id)}
-                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-black border transition flex items-center justify-between ${t.cls} ${
-                    nivelTriaje === t.id ? 'ring-2 ring-white scale-[1.02] shadow-lg' : 'opacity-50 hover:opacity-100'
-                  }`}
-                >
-                  <span>{t.label}</span>
-                  {nivelTriaje === t.id && <Check className="w-4 h-4 shrink-0" />}
-                </button>
-              ))}
-            </div>
+            {servicioActivo === 'EMERGENCIA' && (
+              <>
+                <label className="block text-xs font-bold mb-1.5 text-slate-400">Nivel de Prioridad de Emergencia:</label>
+                <div className="space-y-1.5 mb-4">
+                  {OpcionesTriaje.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setNivelTriaje(t.id)}
+                      className={`w-full text-left px-3 py-2 rounded-xl text-xs font-black border transition flex items-center justify-between ${t.cls} ${
+                        nivelTriaje === t.id ? 'ring-2 ring-white scale-[1.02] shadow-lg' : 'opacity-50 hover:opacity-100'
+                      }`}
+                    >
+                      <span>{t.label}</span>
+                      {nivelTriaje === t.id && <Check className="w-4 h-4 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
 
-            <label className="block text-xs font-bold mb-1.5 text-slate-400">Apellidos y Nombres del Nuevo Paciente:</label>
+            {servicioActivo === 'CONSULTA_EXTERNA' && (
+              <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs mb-3 text-blue-400 font-bold">
+                Área: Consulta Externa (Atención por Cita / Sin Triaje)
+              </div>
+            )}
+
+            <label className="block text-xs font-bold mb-1.5 text-slate-400">Apellidos y Nombres del Paciente:</label>
             <input
               type="text"
               autoComplete="off"
@@ -1290,6 +1301,239 @@ export function ModalDuplicados() {
             Entendido
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// 12. MODAL SUBIR CITAS EXCEL (CONSULTA EXTERNA)
+export function ModalSubirCitas() {
+  const {
+    medicoParaSubirCitas,
+    setMedicoParaSubirCitas,
+    mostrarModalSubirCitas,
+    setMostrarModalSubirCitas,
+    handleSubirCitasExcel,
+    cargando,
+    temaClaro
+  } = useApp();
+
+  const [archivoSeleccionado, setArchivoSeleccionado] = useState(null);
+  const [nombreArchivo, setNombreArchivo] = useState('');
+
+  if (!mostrarModalSubirCitas || !medicoParaSubirCitas) return null;
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setArchivoSeleccionado(file);
+      setNombreArchivo(file.name);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!archivoSeleccionado) return;
+    handleSubirCitasExcel(archivoSeleccionado, medicoParaSubirCitas);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className={`w-full max-w-lg rounded-3xl p-6 shadow-2xl border ${
+        temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+      }`}>
+        <div className="flex justify-between items-center pb-4 border-b border-slate-700/60 mb-4">
+          <div className="flex items-center space-x-2">
+            <FileSpreadsheet className="w-5 h-5 text-cyan-400" />
+            <h3 className="text-lg font-bold">Cargar Pacientes Citados (Excel)</h3>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => {
+              setMostrarModalSubirCitas(false);
+              setMedicoParaSubirCitas(null);
+            }} 
+            className="text-slate-400 hover:text-slate-200"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-xs">
+          <p className="text-cyan-400 font-bold mb-1">
+            Médico Asignado: {medicoParaSubirCitas.Medico}
+          </p>
+          <p className="text-slate-400">
+            {medicoParaSubirCitas.Area} — {medicoParaSubirCitas.Modulo || 'Módulo General'}
+          </p>
+        </div>
+
+        <div className={`p-4 rounded-2xl border mb-4 text-xs ${
+          temaClaro ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
+        }`}>
+          <p className="font-bold text-slate-300 mb-2">Columnas esperadas en el archivo Excel:</p>
+          <div className="grid grid-cols-4 gap-2 text-center font-mono text-[11px]">
+            <div className="p-2 bg-slate-800/80 rounded-lg text-cyan-400 border border-slate-700">Orden</div>
+            <div className="p-2 bg-slate-800/80 rounded-lg text-cyan-400 border border-slate-700">H.A. (Hora)</div>
+            <div className="p-2 bg-slate-800/80 rounded-lg text-cyan-400 border border-slate-700">Apellidos y Nombres</div>
+            <div className="p-2 bg-slate-800/80 rounded-lg text-cyan-400 border border-slate-700">Situacion</div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className={`border-2 border-dashed rounded-2xl p-6 text-center transition ${
+            archivoSeleccionado ? 'border-cyan-500 bg-cyan-500/10' : 'border-slate-700 hover:border-slate-500'
+          }`}>
+            <input
+              type="file"
+              id="excelCitasInput"
+              accept=".xlsx, .xls, .csv"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+            <label htmlFor="excelCitasInput" className="cursor-pointer flex flex-col items-center justify-center space-y-2">
+              <Upload className="w-8 h-8 text-cyan-400 animate-bounce" />
+              <span className="text-xs font-bold text-cyan-400">
+                {nombreArchivo ? nombreArchivo : "Haz clic para seleccionar el archivo Excel (.xlsx, .xls)"}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                {nombreArchivo ? "Archivo listo para procesar" : "Padrón descargado de citas médicas"}
+              </span>
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMostrarModalSubirCitas(false);
+                setMedicoParaSubirCitas(null);
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!archivoSeleccionado || cargando}
+              className="px-5 py-2 rounded-xl text-xs font-bold bg-cyan-600 hover:bg-cyan-500 text-white transition shadow-lg disabled:opacity-50 flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              <span>{cargando ? "Procesando Citas..." : "Cargar Pacientes"}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// 13. MODAL REGISTRO MANUAL DE PACIENTE (CONSULTA EXTERNA)
+export function ModalCitaManual() {
+  const {
+    medicoParaCitaManual,
+    setMedicoParaCitaManual,
+    mostrarModalCitaManual,
+    setMostrarModalCitaManual,
+    agregarCitaManual,
+    cargando,
+    temaClaro
+  } = useApp();
+
+  const [nombreManual, setNombreManual] = useState('');
+  const [horaManual, setHoraManual] = useState('');
+
+  if (!mostrarModalCitaManual || !medicoParaCitaManual) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!nombreManual.trim()) return;
+    agregarCitaManual(medicoParaCitaManual, nombreManual, horaManual);
+    setNombreManual('');
+    setHoraManual('');
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className={`w-full max-w-md rounded-3xl p-6 shadow-2xl border ${
+        temaClaro ? 'bg-white border-slate-200 text-slate-800' : 'bg-slate-900 border-slate-800 text-white'
+      }`}>
+        <div className="flex justify-between items-center pb-4 border-b border-slate-700/60 mb-4">
+          <div className="flex items-center space-x-2">
+            <UserPlus className="w-5 h-5 text-blue-400" />
+            <h3 className="text-lg font-bold">+ Registrar Paciente Adicional</h3>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => {
+              setMostrarModalCitaManual(false);
+              setMedicoParaCitaManual(null);
+            }} 
+            className="text-slate-400 hover:text-slate-200"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="mb-4 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs">
+          <p className="text-blue-400 font-bold">
+            Médico: {medicoParaCitaManual.Medico}
+          </p>
+          <p className="text-slate-400">
+            {medicoParaCitaManual.Modulo || 'Módulo General'} — {medicoParaCitaManual.consultorioTopico || 'Consultorio Asignado'}
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold mb-1 text-slate-400">Apellidos y Nombres del Paciente:</label>
+            <input
+              type="text"
+              required
+              autoFocus
+              value={nombreManual}
+              onChange={(e) => setNombreManual(e.target.value)}
+              placeholder="EJ. MENDOZA CASTILLO CARLOS"
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm font-bold uppercase focus:outline-none transition ${
+                temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+              }`}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold mb-1 text-slate-400">Hora de Atención (H.A.):</label>
+            <input
+              type="text"
+              value={horaManual}
+              onChange={(e) => setHoraManual(e.target.value)}
+              placeholder="Ej. 10:30 (Opcional, tomará hora actual)"
+              className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none transition ${
+                temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+              }`}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setMostrarModalCitaManual(false);
+                setMedicoParaCitaManual(null);
+              }}
+              className="px-4 py-2 rounded-xl text-xs font-bold border border-slate-700 text-slate-400 hover:bg-slate-800 transition"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={cargando}
+              className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition shadow-lg flex items-center gap-1.5"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>{cargando ? "Guardando..." : "Agregar a la Lista"}</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

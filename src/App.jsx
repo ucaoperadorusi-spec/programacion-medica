@@ -15,7 +15,9 @@ import {
   ModalLogin,
   ModalComunicado,
   ModalReemplazo,
-  ModalDuplicados
+  ModalDuplicados,
+  ModalSubirCitas,
+  ModalCitaManual
 } from './components/Modales';
 
 export default function App() {
@@ -59,6 +61,8 @@ export default function App() {
       <ModalComunicado />
       <ModalReemplazo />
       <ModalDuplicados />
+      <ModalSubirCitas />
+      <ModalCitaManual />
     </div>
   );
 }

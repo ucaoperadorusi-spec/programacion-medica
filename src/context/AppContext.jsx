@@ -37,9 +37,14 @@ import {
   esEspecialidadEmergencia,
   estaEnTurno as calcEstaEnTurno,
   estaEnUltimaHora as calcEstaEnUltimaHora,
+  estaEnVentanaAnticipada as calcEstaEnVentanaAnticipada,
   calcularEstadoInteligente as calcEstadoInteligente
 } from '../utils/horarios';
-import { getFieldValue, generarReporteExcelAuditoria } from '../utils/excel';
+import { 
+  getFieldValue, 
+  generarReporteExcelAuditoria,
+  parseExcelCitasConsultaExterna
+} from '../utils/excel';
 import { useToast } from '../components/Toast';
 
 const AppContext = createContext(null);
@@ -128,12 +133,21 @@ export const AppProvider = ({ children }) => {
 
   // Estados de Usuario & Autenticación
   const [rolUsuario, setRolUsuario] = useState(null);
+  const [servicioPermitidoUsuario, setServicioPermitidoUsuario] = useState('TODOS');
+  const [medicoAsignadoUsuario, setMedicoAsignadoUsuario] = useState('');
   const [emailUsuarioActivo, setEmailUsuarioActivo] = useState('');
   const [mostrarModalLogin, setMostrarModalLogin] = useState(false);
   const [mostrarModalComunicado, setMostrarModalComunicado] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [errorPin, setErrorPin] = useState(false);
+
+  // Citas y Pacientes de Consulta Externa (Carga Masiva Excel & Manual)
+  const [citasConsultaExterna, setCitasConsultaExterna] = useState([]);
+  const [medicoParaSubirCitas, setMedicoParaSubirCitas] = useState(null);
+  const [mostrarModalSubirCitas, setMostrarModalSubirCitas] = useState(false);
+  const [medicoParaCitaManual, setMedicoParaCitaManual] = useState(null);
+  const [mostrarModalCitaManual, setMostrarModalCitaManual] = useState(false);
 
   // Estados de Llamado & Cola
   const [medicoParaLlamar, setMedicoParaLlamar] = useState(null);
@@ -196,6 +210,7 @@ export const AppProvider = ({ children }) => {
   // Wrappers de cálculo de turnos
   const estaEnTurno = useCallback((horarios) => calcEstaEnTurno(horarios, horaReferencia), [horaReferencia]);
   const estaEnUltimaHora = useCallback((horarios) => calcEstaEnUltimaHora(horarios, horaReferencia), [horaReferencia]);
+  const estaEnVentanaAnticipada = useCallback((horarios) => calcEstaEnVentanaAnticipada(horarios, horaReferencia), [horaReferencia]);
   const calcularEstadoInteligente = useCallback((med, activo) => calcEstadoInteligente(med, activo, horaReferencia), [horaReferencia]);
   const obtenerTiempoTranscurridoRef = useCallback((iso) => obtenerTiempoTranscurrido(iso, horaReferencia), [horaReferencia]);
 
@@ -211,18 +226,35 @@ export const AppProvider = ({ children }) => {
           const userSnap = await getDoc(userDocRef);
 
           if (userSnap.exists() && userSnap.data().activo !== false) {
-            const rolDB = userSnap.data().rol || 'OPERADOR';
+            const dataUser = userSnap.data();
+            const rolDB = dataUser.rol || 'OPERADOR';
+            const servPermitido = dataUser.servicio || 'TODOS';
+            const medAsignado = dataUser.medicoAsignado || '';
             setRolUsuario(rolDB);
-            if (rolDB === 'ADMISION') setServicioActivo('EMERGENCIA');
+            setServicioPermitidoUsuario(servPermitido);
+            setMedicoAsignadoUsuario(medAsignado);
+
+            // Restricción estricta de área según el perfil configurado
+            if (servPermitido === 'EMERGENCIA' || rolDB === 'ADMISION') {
+              setServicioActivo('EMERGENCIA');
+            } else if (servPermitido === 'CONSULTA_EXTERNA') {
+              setServicioActivo('CONSULTA_EXTERNA');
+            }
           } else {
             setRolUsuario('OPERADOR');
+            setServicioPermitidoUsuario('TODOS');
+            setMedicoAsignadoUsuario('');
           }
         } catch (e) {
           console.error("Error al obtener rol del usuario:", e);
           setRolUsuario('OPERADOR');
+          setServicioPermitidoUsuario('TODOS');
+          setMedicoAsignadoUsuario('');
         }
       } else {
         setRolUsuario(null);
+        setServicioPermitidoUsuario('TODOS');
+        setMedicoAsignadoUsuario('');
         setEmailUsuarioActivo('');
       }
     });
@@ -280,6 +312,23 @@ export const AppProvider = ({ children }) => {
     const unsub = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setListaEspera(datos);
+    });
+    return () => unsub();
+  }, []);
+
+  // Suscripción a Citas de Consulta Externa (Pacientes citados de hoy)
+  useEffect(() => {
+    const hoy = obtenerFechaHoyLocal();
+    const q = query(
+      collection(db, "citas_consulta_externa"),
+      where("fecha", "==", hoy)
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      datos.sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0));
+      setCitasConsultaExterna(datos);
+    }, (error) => {
+      console.error("Error en suscripción a citas_consulta_externa:", error);
     });
     return () => unsub();
   }, []);
@@ -347,12 +396,14 @@ export const AppProvider = ({ children }) => {
     procesarSiguienteLlamado();
   }, [procesarSiguienteLlamado]);
 
-  // Detección de llamados en vivo para vocear
+  // Detección de llamados en vivo para vocear (tanto en Emergencia como en Consulta Externa según el canal activo)
   useEffect(() => {
-    if (servicioActivo !== 'EMERGENCIA') return;
-
     programacion.forEach(p => {
-      if (p.TipoServicio === 'EMERGENCIA' && p.estado === 'LLAMANDO' && p.pacienteLlamado && p.estadoUltimoCambio) {
+      const esEmerg = p.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(p.Area, p.Rol);
+      const coincideServicio = servicioActivo === 'EMERGENCIA' ? esEmerg : !esEmerg;
+      if (!coincideServicio) return;
+
+      if (p.estado === 'LLAMANDO' && p.pacienteLlamado && p.estadoUltimoCambio) {
         const claveUnicaLlamado = `${p.id}_${p.pacienteLlamado}_${p.estadoUltimoCambio}`;
         const tiempoCambio = new Date(p.estadoUltimoCambio).getTime();
         const segundosDesdeLlamado = (Date.now() - tiempoCambio) / 1000;
@@ -360,7 +411,7 @@ export const AppProvider = ({ children }) => {
         if (!llamadosProcesadosRef.current.has(claveUnicaLlamado)) {
           llamadosProcesadosRef.current.add(claveUnicaLlamado);
           if (segundosDesdeLlamado < 15) {
-            agregarAColaDeLlamados(p.pacienteLlamado, p.Medico, p.consultorioTopico || '');
+            agregarAColaDeLlamados(p.pacienteLlamado, p.Medico, p.consultorioTopico || p.Modulo || '');
           }
         }
       }
@@ -557,6 +608,8 @@ export const AppProvider = ({ children }) => {
     try {
       await signOut(auth);
       setRolUsuario(null);
+      setServicioPermitidoUsuario('TODOS');
+      setMedicoAsignadoUsuario('');
       setEmailUsuarioActivo('');
       setVistaActiva('MONITOR');
       toast.info("Sesión cerrada.");
@@ -566,9 +619,11 @@ export const AppProvider = ({ children }) => {
   };
 
   // Modificar Estados Médicos
-  const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHoraFlag = false, medObj = null) => {
-    if (!estaActivo) {
-      toast.warn("El médico no se encuentra en turno activo. No se puede modificar su estado.");
+  const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHoraFlag = false, medObj = null, enVentanaAnticipadaFlag = false) => {
+    const esActivacionAnticipada = enVentanaAnticipadaFlag && nuevoEstado === 'CONSULTA';
+
+    if (!estaActivo && !esActivacionAnticipada) {
+      toast.warn("El médico no se encuentra en turno activo ni dentro de la hora previa de inicio.");
       return;
     }
 
@@ -838,6 +893,21 @@ export const AppProvider = ({ children }) => {
       });
 
       await batch.commit();
+
+      // Sincronizar con cita de Consulta Externa si existe
+      if (servicioActivo === 'CONSULTA_EXTERNA') {
+        const citaMatch = citasConsultaExterna.find(c => 
+          (c.id === medObj.citaIdActual) || 
+          (c.medico === medObj.Medico && c.paciente === pacienteNombre && c.situacion !== 'ATENDIDA')
+        );
+        if (citaMatch) {
+          await updateDoc(doc(db, "citas_consulta_externa", citaMatch.id), {
+            situacion: 'EN_CONSULTA',
+            horaInicioConsulta: ahoraIso
+          });
+        }
+      }
+
       toast.success(`Paciente ${pacienteNombre} ingresó a consulta.`);
     } catch (err) {
       console.error("Error al registrar ingreso a consulta:", err);
@@ -863,6 +933,7 @@ export const AppProvider = ({ children }) => {
         batch.update(medRef, {
           estado: "CONSULTA",
           pacienteLlamado: null,
+          citaIdActual: null,
           nivelTriajeLlamado: null,
           horaIngresoConsulta: null,
           estadoUltimoCambio: ahoraIso
@@ -870,7 +941,22 @@ export const AppProvider = ({ children }) => {
       });
 
       await batch.commit();
-      toast.success(`Atención de ${pacienteNombre} finalizada con éxito.`);
+
+      // Sincronizar con cita de Consulta Externa (pasa de PENDIENTE/EN_CONSULTA a ATENDIDA)
+      if (servicioActivo === 'CONSULTA_EXTERNA') {
+        const citaMatch = citasConsultaExterna.find(c => 
+          (c.id === medObj.citaIdActual) || 
+          (c.medico === medObj.Medico && c.paciente === pacienteNombre && c.situacion !== 'ATENDIDA')
+        );
+        if (citaMatch) {
+          await updateDoc(doc(db, "citas_consulta_externa", citaMatch.id), {
+            situacion: 'ATENDIDA',
+            horaFinConsulta: ahoraIso
+          });
+        }
+      }
+
+      toast.success(`Atención de ${pacienteNombre} finalizada con éxito (ATENDIDA).`);
     } catch (err) {
       console.error("Error al marcar como atendido:", err);
       toast.error("Error al registrar paciente atendido.");
@@ -894,6 +980,7 @@ export const AppProvider = ({ children }) => {
         batch.update(medRef, {
           estado: "CONSULTA",
           pacienteLlamado: null,
+          citaIdActual: null,
           nivelTriajeLlamado: null,
           horaIngresoConsulta: null,
           estadoUltimoCambio: ahoraIso
@@ -901,6 +988,21 @@ export const AppProvider = ({ children }) => {
       });
 
       await batch.commit();
+
+      // Sincronizar con cita de Consulta Externa
+      if (servicioActivo === 'CONSULTA_EXTERNA') {
+        const citaMatch = citasConsultaExterna.find(c => 
+          (c.id === medObj.citaIdActual) || 
+          (c.medico === medObj.Medico && c.paciente === pacienteNombre && c.situacion !== 'ATENDIDA')
+        );
+        if (citaMatch) {
+          await updateDoc(doc(db, "citas_consulta_externa", citaMatch.id), {
+            situacion: 'NO_RESPONDIO',
+            horaNoRespondio: ahoraIso
+          });
+        }
+      }
+
       toast.warn(`Paciente ${pacienteNombre} registrado como 'No Respondió'.`);
     } catch (err) {
       console.error("Error al registrar no respondió:", err);
@@ -982,6 +1084,306 @@ export const AppProvider = ({ children }) => {
     } catch (err) {
       console.error("Error al registrar inasistencia:", err);
       toast.error("Error al guardar inasistencia.");
+    }
+  };
+
+  // ===== GESTIÓN DE CITAS DE CONSULTA EXTERNA (EXCEL Y MANUAL) =====
+
+  // 1. Subir lista de citados del día desde Excel (Orden, H.A., Paciente, Situacion)
+  const handleSubirCitasExcel = async (archivo, medObj) => {
+    if (!archivo || !medObj) return;
+    try {
+      setCargando(true);
+      const data = await archivo.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      const parsedCitas = parseExcelCitasConsultaExterna(jsonData);
+      if (parsedCitas.length === 0) {
+        toast.warn("No se encontraron registros de pacientes válidos en el archivo Excel. Verifique las columnas: Orden, H.A., Apellidos y Nombres Paciente, Situacion.");
+        return;
+      }
+
+      const hoy = obtenerFechaHoyLocal();
+      const batch = writeBatch(db);
+
+      parsedCitas.forEach((c) => {
+        const docRef = doc(collection(db, "citas_consulta_externa"));
+        batch.set(docRef, {
+          medico: medObj.Medico,
+          modulo: medObj.Modulo || "Módulo General",
+          consultorio: medObj.consultorioTopico || medObj.Modulo || "",
+          fecha: hoy,
+          orden: c.orden,
+          horaAtencion: c.horaAtencion,
+          paciente: c.paciente,
+          situacion: c.situacion || 'PENDIENTE',
+          esManual: false,
+          fechaCreacion: new Date().toISOString()
+        });
+      });
+
+      await batch.commit();
+      setMostrarModalSubirCitas(false);
+      setMedicoParaSubirCitas(null);
+      toast.success(`Se cargaron ${parsedCitas.length} pacientes citados exitosamente para ${medObj.Medico}`);
+    } catch (err) {
+      console.error("Error al procesar Excel de citas:", err);
+      toast.error(`Error al procesar el archivo Excel: ${err.message || 'Formato no compatible'}`);
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // 2. Agregar paciente manual en Consulta Externa (adicional que no vino en el Excel)
+  const agregarCitaManual = async (medObj, nombrePacienteManual, horaAtencionManual = '') => {
+    if (!medObj || !nombrePacienteManual.trim()) return;
+    try {
+      setCargando(true);
+      const hoy = obtenerFechaHoyLocal();
+      const nombreLimpio = nombrePacienteManual.trim().toUpperCase();
+
+      // Calcular el siguiente número de orden para este médico hoy
+      const citasDoctor = citasConsultaExterna.filter(c => c.medico === medObj.Medico && c.fecha === hoy);
+      const maxOrden = citasDoctor.reduce((max, c) => Math.max(max, Number(c.orden) || 0), 0);
+      const siguienteOrden = maxOrden + 1;
+
+      const horaDefecto = horaAtencionManual.trim() || new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+      await addDoc(collection(db, "citas_consulta_externa"), {
+        medico: medObj.Medico,
+        modulo: medObj.Modulo || "Módulo General",
+        consultorio: medObj.consultorioTopico || medObj.Modulo || "",
+        fecha: hoy,
+        orden: siguienteOrden,
+        horaAtencion: horaDefecto,
+        paciente: nombreLimpio,
+        situacion: 'PENDIENTE',
+        esManual: true,
+        fechaCreacion: new Date().toISOString()
+      });
+
+      setMostrarModalCitaManual(false);
+      setMedicoParaCitaManual(null);
+      toast.success(`Paciente adicional "${nombreLimpio}" agregado en el orden #${siguienteOrden}`);
+    } catch (err) {
+      console.error("Error al agregar paciente manual:", err);
+      toast.error("Error al registrar paciente adicional.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // 3. Llamar paciente citado en Consulta Externa
+  const llamarPacienteCitado = async (medObj, citaObj) => {
+    if (!medObj || !citaObj || cargando) return;
+    try {
+      setCargando(true);
+      const ahoraIso = new Date().toISOString();
+      const consultorioDoc = medObj.consultorioTopico || medObj.Modulo || '';
+
+      // Actualizar cita en citas_consulta_externa
+      await updateDoc(doc(db, "citas_consulta_externa", citaObj.id), {
+        situacion: 'LLAMANDO',
+        horaLlamado: ahoraIso
+      });
+
+      // Actualizar tarjeta del médico en programacion_medica
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      ids.forEach(idDoc => {
+        batch.update(doc(db, "programacion_medica", idDoc), {
+          estado: 'LLAMANDO',
+          pacienteLlamado: citaObj.paciente,
+          citaIdActual: citaObj.id,
+          nivelTriajeLlamado: null,
+          consultorioTopico: consultorioDoc,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+      await batch.commit();
+
+      // Auditoría: Registrar llamado
+      await registrarEnHistorialFirestore(
+        medObj.Medico,
+        citaObj.paciente,
+        'LLAMADO',
+        'CONSULTA_EXTERNA',
+        ahoraIso,
+        consultorioDoc,
+        'CONSULTA'
+      );
+
+      // Voceo
+      agregarAColaDeLlamados(citaObj.paciente, medObj.Medico, consultorioDoc);
+
+      toast.success(`Llamando a paciente #${citaObj.orden}: ${citaObj.paciente}`);
+    } catch (err) {
+      console.error("Error al llamar paciente citado:", err);
+      toast.error("Error al llamar al paciente.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  // 4. Ingresar a consulta paciente citado
+  const ingresarAConsultaCitado = async (medObj, citaObj) => {
+    if (!medObj || !citaObj) return;
+    try {
+      const ahoraIso = new Date().toISOString();
+      const consultorioDoc = medObj.consultorioTopico || medObj.Modulo || '';
+
+      await updateDoc(doc(db, "citas_consulta_externa", citaObj.id), {
+        situacion: 'EN_CONSULTA',
+        horaInicioConsulta: ahoraIso
+      });
+
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      ids.forEach(idDoc => {
+        batch.update(doc(db, "programacion_medica", idDoc), {
+          estado: 'CONSULTA',
+          pacienteLlamado: citaObj.paciente,
+          citaIdActual: citaObj.id,
+          horaIngresoConsulta: ahoraIso,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+      await batch.commit();
+
+      await registrarEnHistorialFirestore(
+        medObj.Medico,
+        citaObj.paciente,
+        'EN_CONSULTA',
+        'CONSULTA_EXTERNA',
+        ahoraIso,
+        consultorioDoc,
+        'CONSULTA'
+      );
+
+      toast.success(`Paciente #${citaObj.orden} - ${citaObj.paciente} ingresó a consulta.`);
+    } catch (err) {
+      console.error("Error al ingresar citado a consulta:", err);
+      toast.error("Error al registrar ingreso.");
+    }
+  };
+
+  // 5. Finalizar consulta paciente citado (de PENDIENTE/EN_CONSULTA a ATENDIDA)
+  const marcarCitadoAtendido = async (medObj, citaObj) => {
+    if (!medObj || !citaObj) return;
+    try {
+      const ahoraIso = new Date().toISOString();
+      const consultorioDoc = medObj.consultorioTopico || medObj.Modulo || '';
+
+      await updateDoc(doc(db, "citas_consulta_externa", citaObj.id), {
+        situacion: 'ATENDIDA',
+        horaFinConsulta: ahoraIso
+      });
+
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      ids.forEach(idDoc => {
+        batch.update(doc(db, "programacion_medica", idDoc), {
+          estado: 'CONSULTA',
+          pacienteLlamado: null,
+          citaIdActual: null,
+          nivelTriajeLlamado: null,
+          horaIngresoConsulta: null,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+      await batch.commit();
+
+      await registrarEnHistorialFirestore(
+        medObj.Medico,
+        citaObj.paciente,
+        'ATENDIDO',
+        'CONSULTA_EXTERNA',
+        ahoraIso,
+        consultorioDoc,
+        'CONSULTA'
+      );
+      await registrarEnPacientesMedico(
+        medObj.Medico,
+        citaObj.paciente,
+        'ATENDIDO',
+        consultorioDoc
+      );
+
+      toast.success(`Atención de ${citaObj.paciente} finalizada: Estado ATENDIDA registrado en auditoría.`);
+    } catch (err) {
+      console.error("Error al finalizar atención de citado:", err);
+      toast.error("Error al finalizar atención.");
+    }
+  };
+
+  // 6. Marcar citado como NO_RESPONDIO
+  const marcarCitadoNoRespondio = async (medObj, citaObj) => {
+    if (!medObj || !citaObj) return;
+    try {
+      const ahoraIso = new Date().toISOString();
+      const consultorioDoc = medObj.consultorioTopico || medObj.Modulo || '';
+
+      await updateDoc(doc(db, "citas_consulta_externa", citaObj.id), {
+        situacion: 'NO_RESPONDIO',
+        horaNoRespondio: ahoraIso
+      });
+
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      ids.forEach(idDoc => {
+        batch.update(doc(db, "programacion_medica", idDoc), {
+          estado: 'CONSULTA',
+          pacienteLlamado: null,
+          citaIdActual: null,
+          nivelTriajeLlamado: null,
+          horaIngresoConsulta: null,
+          estadoUltimoCambio: ahoraIso
+        });
+      });
+      await batch.commit();
+
+      await registrarEnHistorialFirestore(
+        medObj.Medico,
+        citaObj.paciente,
+        'NO_RESPONDIO',
+        'CONSULTA_EXTERNA',
+        ahoraIso,
+        consultorioDoc,
+        'CONSULTA'
+      );
+
+      toast.warn(`Paciente ${citaObj.paciente} registrado como 'No Respondió'.`);
+    } catch (err) {
+      console.error("Error al marcar citado como no respondió:", err);
+      toast.error("Error al actualizar estado.");
+    }
+  };
+
+  // 7. Eliminar citas de un médico de hoy
+  const eliminarCitasMedico = async (medicoNombre) => {
+    if (!medicoNombre) return;
+    if (!window.confirm(`¿Seguro que deseas eliminar la lista de citados de hoy para ${medicoNombre}?`)) return;
+
+    try {
+      setCargando(true);
+      const hoy = obtenerFechaHoyLocal();
+      const citasDoctor = citasConsultaExterna.filter(c => c.medico === medicoNombre && c.fecha === hoy);
+
+      const batch = writeBatch(db);
+      citasDoctor.forEach(c => {
+        batch.delete(doc(db, "citas_consulta_externa", c.id));
+      });
+      await batch.commit();
+
+      toast.info(`Lista de citados eliminada para ${medicoNombre}.`);
+    } catch (err) {
+      console.error("Error al eliminar citas del médico:", err);
+      toast.error("Error al eliminar lista de citas.");
+    } finally {
+      setCargando(false);
     }
   };
 
@@ -1650,6 +2052,8 @@ export const AppProvider = ({ children }) => {
   const contextValue = {
     // Auth & Perfil
     rolUsuario,
+    servicioPermitidoUsuario,
+    medicoAsignadoUsuario,
     emailUsuarioActivo,
     mostrarModalLogin,
     setMostrarModalLogin,
@@ -1661,6 +2065,24 @@ export const AppProvider = ({ children }) => {
     handleLogin,
     loginConGoogle,
     handleLogout,
+
+    // Citas Consulta Externa (Excel y Manual)
+    citasConsultaExterna,
+    medicoParaSubirCitas,
+    setMedicoParaSubirCitas,
+    mostrarModalSubirCitas,
+    setMostrarModalSubirCitas,
+    medicoParaCitaManual,
+    setMedicoParaCitaManual,
+    mostrarModalCitaManual,
+    setMostrarModalCitaManual,
+    handleSubirCitasExcel,
+    agregarCitaManual,
+    llamarPacienteCitado,
+    ingresarAConsultaCitado,
+    marcarCitadoAtendido,
+    marcarCitadoNoRespondio,
+    eliminarCitasMedico,
 
     // Estados Generales
     programacion,
@@ -1705,6 +2127,7 @@ export const AppProvider = ({ children }) => {
     ESTADOS_MEDICO,
     estaEnTurno,
     estaEnUltimaHora,
+    estaEnVentanaAnticipada,
     calcularEstadoInteligente,
     obtenerTiempoTranscurrido: obtenerTiempoTranscurridoRef,
     puedeModificarEstados,
