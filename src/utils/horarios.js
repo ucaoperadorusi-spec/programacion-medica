@@ -64,18 +64,29 @@ export const estaEnVentanaAnticipada = (horariosArray, horaActual = new Date()) 
   });
 };
 
+// Devuelve los minutos que faltan para el inicio del turno más próximo
+export const minutosParaInicioTurno = (horariosArray, horaActual = new Date()) => {
+  if (!horariosArray || horariosArray.length === 0) return 999;
+  const ahora = horaActual.getHours() * 60 + horaActual.getMinutes();
+
+  let menorDif = 999;
+  horariosArray.forEach(h => {
+    if (!h.inicio || h.inicio === "--:--") return;
+    const inicioMin = obtenerMinutos(h.inicio);
+    let dif = inicioMin - ahora;
+    if (dif < 0) dif += 1440;
+    if (dif < menorDif) menorDif = dif;
+  });
+  return menorDif;
+};
+
 export const calcularEstadoInteligente = (med, estaActivoAhora, horaActual = new Date()) => {
   if (!med.horarios || med.horarios.length === 0) return med.estado || "CONSULTA";
 
   const todosPasados = med.horarios.every(h => obtenerEstadoHorario(h, horaActual) === 'PASADO');
   if (todosPasados) return "CULMINADO";
 
-  // Si faltan hasta 60 minutos para iniciar y activó CONSULTA:
-  const enAnticipada = estaEnVentanaAnticipada(med.horarios, horaActual);
-  if (enAnticipada && med.estado === 'CONSULTA') {
-    return "CONSULTA";
-  }
-
+  // Si está en su turno oficial de atención:
   if (estaActivoAhora) {
     if (med.estado === "CULMINADO" && estaEnUltimaHora(med.horarios, horaActual)) {
       return "CULMINADO";
@@ -84,8 +95,16 @@ export const calcularEstadoInteligente = (med, estaActivoAhora, horaActual = new
     return med.estado || "CONSULTA";
   }
 
+  // Si faltan hasta 60 minutos para iniciar (ventana anticipada):
+  // SOLO se activa si el médico o personal autorizó explícitamente el inicio o llamó a un paciente
+  const enAnticipada = estaEnVentanaAnticipada(med.horarios, horaActual);
+  if (enAnticipada && (med.inicioAnticipado === true || Boolean(med.pacienteLlamado))) {
+    return med.estado || "CONSULTA";
+  }
+
+  // Si tiene turno futuro o está en ventana anticipada sin autorizar, DEBE figurar como PROGRAMADO
   const tieneTurnoFuturo = med.horarios.some(h => obtenerEstadoHorario(h, horaActual) === 'FUTURO');
-  if (tieneTurnoFuturo) {
+  if (tieneTurnoFuturo || enAnticipada) {
     return "PROGRAMADO";
   }
 

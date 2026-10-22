@@ -197,6 +197,7 @@ export const AppProvider = ({ children }) => {
   const colaLlamadosRef = useRef([]);
   const reproduciendoAudioRef = useRef(false);
   const llamadosProcesadosRef = useRef(new Set());
+  const ultimosVoceadosRef = useRef(new Map());
 
   // Reloj de estado sincronizado cada 15 segundos para turnos (evita re-renders cada segundo)
   const [horaReferencia, setHoraReferencia] = useState(new Date());
@@ -392,19 +393,34 @@ export const AppProvider = ({ children }) => {
   }, []);
 
   const agregarAColaDeLlamados = useCallback((nombre, medico, consultorio = '') => {
+    if (!nombre) return;
+    const clave = `${medico}_${nombre}`.toUpperCase();
+    const ahora = Date.now();
+    const ultimoTiempo = ultimosVoceadosRef.current.get(clave);
+
+    // Evita duplicar el llamado si ya se voceó/encoló en los últimos 20 segundos
+    if (ultimoTiempo && (ahora - ultimoTiempo) < 20000) {
+      return;
+    }
+    ultimosVoceadosRef.current.set(clave, ahora);
+
     colaLlamadosRef.current.push({ nombre, medico, consultorio });
     procesarSiguienteLlamado();
   }, [procesarSiguienteLlamado]);
 
-  // Detección de llamados en vivo para vocear (tanto en Emergencia como en Consulta Externa según el canal activo)
+  // Detección de llamados en vivo para vocear (agrupado por médico para evitar duplicados por múltiples registros de turno)
   useEffect(() => {
+    const medicosProcesados = new Set();
     programacion.forEach(p => {
       const esEmerg = p.TipoServicio === 'EMERGENCIA' || esEspecialidadEmergencia(p.Area, p.Rol);
       const coincideServicio = servicioActivo === 'EMERGENCIA' ? esEmerg : !esEmerg;
       if (!coincideServicio) return;
 
       if (p.estado === 'LLAMANDO' && p.pacienteLlamado && p.estadoUltimoCambio) {
-        const claveUnicaLlamado = `${p.id}_${p.pacienteLlamado}_${p.estadoUltimoCambio}`;
+        if (medicosProcesados.has(p.Medico)) return;
+        medicosProcesados.add(p.Medico);
+
+        const claveUnicaLlamado = `${p.Medico}_${p.pacienteLlamado}_${p.estadoUltimoCambio}`;
         const tiempoCambio = new Date(p.estadoUltimoCambio).getTime();
         const segundosDesdeLlamado = (Date.now() - tiempoCambio) / 1000;
 
@@ -659,6 +675,14 @@ export const AppProvider = ({ children }) => {
       return;
     }
 
+    // Si aún no está en su turno oficial (está en ventana anticipada) y desea iniciar CONSULTA:
+    if (!estaActivo && enVentanaAnticipadaFlag && nuevoEstado === "CONSULTA") {
+      const confirmaInicio = window.confirm(
+        `¿Desea autorizar el inicio anticipado de la atención para ${medObj?.Medico || 'este médico'}? La tarjeta pasará a 'En Consulta' y se habilitará el llamado en pantalla.`
+      );
+      if (!confirmaInicio) return;
+    }
+
     try {
       const rawIds = Array.isArray(idsDocs) ? idsDocs : [idsDocs];
       const validIds = rawIds.filter(id => typeof id === 'string' && id.trim().length > 0);
@@ -682,12 +706,16 @@ export const AppProvider = ({ children }) => {
           estadoUltimoCambio: ahoraIso
         };
 
-        if (nuevoEstado === "LLAMANDO") {
+        if (nuevoEstado === "CONSULTA") {
+          updateData.inicioAnticipado = true;
+        } else if (nuevoEstado === "LLAMANDO") {
           updateData.pacienteLlamado = medObj?.pacienteLlamado || '';
-        } else if (nuevoEstado === "CULMINADO") {
+          updateData.inicioAnticipado = true;
+        } else if (nuevoEstado === "CULMINADO" || nuevoEstado === "PROGRAMADO") {
           updateData.pacienteLlamado = null;
           updateData.nivelTriajeLlamado = null;
           updateData.horaIngresoConsulta = null;
+          updateData.inicioAnticipado = false;
         }
 
         batch.update(medRef, updateData);
@@ -1176,13 +1204,50 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Asignar o actualizar el Consultorio/Tópico físico de un médico
+  const asignarConsultorioMedico = async (medObj, consultorioStr) => {
+    if (!medObj || !consultorioStr) return;
+    try {
+      const ids = Array.isArray(medObj.ids) ? medObj.ids : [medObj.id];
+      const batch = writeBatch(db);
+      ids.forEach(idDoc => {
+        batch.update(doc(db, "programacion_medica", idDoc), {
+          consultorioTopico: consultorioStr.trim()
+        });
+      });
+      await batch.commit();
+      toast.success(`Consultorio de ${medObj.Medico} fijado en: ${consultorioStr.trim()}`);
+    } catch (err) {
+      console.error("Error al asignar consultorio:", err);
+      toast.error("Error al actualizar consultorio.");
+    }
+  };
+
   // 3. Llamar paciente citado en Consulta Externa
   const llamarPacienteCitado = async (medObj, citaObj) => {
     if (!medObj || !citaObj || cargando) return;
     try {
+      // Si la consulta aún no está en su horario oficial, solicitar confirmación al personal
+      if (!estaEnTurno(medObj.horarios)) {
+        const confLlamado = window.confirm(
+          `¿Desea autorizar el inicio anticipado de consulta de ${medObj.Medico} para llamar a #${citaObj.orden} ${citaObj.paciente}? Se activará en pantalla TV.`
+        );
+        if (!confLlamado) return;
+      }
+
+      let consultorioDoc = medObj.consultorioTopico && medObj.consultorioTopico.trim();
+      if (!consultorioDoc) {
+        const resp = window.prompt(`Indique el Consultorio de atención para ${medObj.Medico} (Ej. Consultorio 3):`, "Consultorio 1");
+        if (!resp || !resp.trim()) {
+          toast.warn("Debe especificar el consultorio para poder realizar el llamado.");
+          return;
+        }
+        consultorioDoc = resp.trim();
+        await asignarConsultorioMedico(medObj, consultorioDoc);
+      }
+
       setCargando(true);
       const ahoraIso = new Date().toISOString();
-      const consultorioDoc = medObj.consultorioTopico || medObj.Modulo || '';
 
       // Actualizar cita en citas_consulta_externa
       await updateDoc(doc(db, "citas_consulta_externa", citaObj.id), {
@@ -1198,6 +1263,7 @@ export const AppProvider = ({ children }) => {
           estado: 'LLAMANDO',
           pacienteLlamado: citaObj.paciente,
           citaIdActual: citaObj.id,
+          inicioAnticipado: true,
           nivelTriajeLlamado: null,
           consultorioTopico: consultorioDoc,
           estadoUltimoCambio: ahoraIso
@@ -1216,8 +1282,7 @@ export const AppProvider = ({ children }) => {
         'CONSULTA'
       );
 
-      // Voceo
-      agregarAColaDeLlamados(citaObj.paciente, medObj.Medico, consultorioDoc);
+      // (El voceo se activa automáticamente y de manera única por el listener de Firestore sin duplicados)
 
       toast.success(`Llamando a paciente #${citaObj.orden}: ${citaObj.paciente}`);
     } catch (err) {
@@ -1523,19 +1588,39 @@ export const AppProvider = ({ children }) => {
   };
 
   // Edición / Registro de Médicos
-  const abrirModalEditar = (med) => {
+  const abrirModalEditar = (med, turnoIndex = 0) => {
     setMedicoParaEditar(med);
     const tipoServ = med.TipoServicio || (esEspecialidadEmergencia(med.Area, med.Rol) ? 'EMERGENCIA' : 'CONSULTA_EXTERNA');
+    const horarioElegido = med.horarios?.[turnoIndex] || { inicio: med.Hora_Inicio || '', fin: med.Hora_Fin || '' };
+    const idDocElegido = med.ids?.[turnoIndex] || med.ids?.[0] || med.id;
+
     setFormEdicion({
+      idDoc: idDocElegido,
+      turnoIndex: turnoIndex,
       Medico: med.Medico || '', 
       Area: med.Area || '', 
       Rol: med.Rol || '', 
       Modulo: med.Modulo || '', 
-      Hora_Inicio: med.horarios?.[0]?.inicio || med.Hora_Inicio || '', 
-      Hora_Fin: med.horarios?.[0]?.fin || med.Hora_Fin || '', 
+      consultorioTopico: med.consultorioTopico || '',
+      Hora_Inicio: horarioElegido.inicio || '', 
+      Hora_Fin: horarioElegido.fin || '', 
       Fecha: med.Fecha || obtenerFechaHoyLocal(), 
       TipoServicio: tipoServ
     });
+  };
+
+  const seleccionarTurnoEdicion = (turnoIndex) => {
+    if (!medicoParaEditar) return;
+    const horarioElegido = medicoParaEditar.horarios?.[turnoIndex] || { inicio: '', fin: '' };
+    const idDocElegido = medicoParaEditar.ids?.[turnoIndex] || medicoParaEditar.ids?.[0] || medicoParaEditar.id;
+
+    setFormEdicion(prev => ({
+      ...prev,
+      idDoc: idDocElegido,
+      turnoIndex: turnoIndex,
+      Hora_Inicio: horarioElegido.inicio || '',
+      Hora_Fin: horarioElegido.fin || ''
+    }));
   };
 
   const guardarEdicionRegistro = async (e) => {
@@ -1543,26 +1628,24 @@ export const AppProvider = ({ children }) => {
     if (rolUsuario !== 'ADMIN' || !medicoParaEditar) return;
 
     try {
-      const ids = Array.isArray(medicoParaEditar.ids) ? medicoParaEditar.ids : [medicoParaEditar.id];
-      const batch = writeBatch(db);
+      // Si se seleccionó un turno específico con idDoc, modificamos únicamente ese turno
+      const idTarget = formEdicion.idDoc || (Array.isArray(medicoParaEditar.ids) ? medicoParaEditar.ids[0] : medicoParaEditar.id);
+      const medRef = doc(db, "programacion_medica", idTarget);
 
-      ids.forEach(idDoc => {
-        const medRef = doc(db, "programacion_medica", idDoc);
-        batch.update(medRef, {
-          Medico: formEdicion.Medico.trim(),
-          Area: formEdicion.Area.trim(),
-          Rol: formEdicion.Rol.trim(),
-          Modulo: formEdicion.Modulo.trim(),
-          Hora_Inicio: formEdicion.Hora_Inicio.trim(),
-          Hora_Fin: formEdicion.Hora_Fin.trim(),
-          Fecha: formEdicion.Fecha,
-          TipoServicio: formEdicion.TipoServicio
-        });
+      await updateDoc(medRef, {
+        Medico: formEdicion.Medico.trim(),
+        Area: formEdicion.Area.trim(),
+        Rol: formEdicion.Rol.trim(),
+        Modulo: formEdicion.Modulo.trim(),
+        consultorioTopico: formEdicion.consultorioTopico?.trim() || formEdicion.Modulo.trim(),
+        Hora_Inicio: formEdicion.Hora_Inicio.trim(),
+        Hora_Fin: formEdicion.Hora_Fin.trim(),
+        Fecha: formEdicion.Fecha,
+        TipoServicio: formEdicion.TipoServicio
       });
 
-      await batch.commit();
       setMedicoParaEditar(null);
-      toast.success("Registro modificado correctamente.");
+      toast.success("Turno modificado correctamente.");
     } catch (err) {
       console.error("Error al editar programación:", err);
       toast.error("Error al guardar cambios de programación.");
@@ -1955,11 +2038,15 @@ export const AppProvider = ({ children }) => {
 
       if (modoTvActivo && mod !== moduloActualTv) return false;
       if (!modoTvActivo && !modulosSeleccionados.includes(mod)) return false;
-      if (soloTurnoActual && !estaEnTurno(item.horarios)) return false;
+      if (soloTurnoActual) {
+        const enTurno = estaEnTurno(item.horarios);
+        const enAnticipadaIniciado = estaEnVentanaAnticipada(item.horarios) && ['CONSULTA', 'LLAMANDO', 'PAUSA'].includes(item.estado);
+        if (!enTurno && !enAnticipadaIniciado) return false;
+      }
 
       return true;
     });
-  }, [programacionAgrupada, servicioActivo, modoTvActivo, moduloActualTv, modulosSeleccionados, soloTurnoActual, estaEnTurno]);
+  }, [programacionAgrupada, servicioActivo, modoTvActivo, moduloActualTv, modulosSeleccionados, soloTurnoActual, estaEnTurno, estaEnVentanaAnticipada]);
 
   const agrupadoPorModulo = useMemo(() => {
     return datosFiltrados.reduce((acc, item) => {
@@ -2083,6 +2170,7 @@ export const AppProvider = ({ children }) => {
     marcarCitadoAtendido,
     marcarCitadoNoRespondio,
     eliminarCitasMedico,
+    asignarConsultorioMedico,
 
     // Estados Generales
     programacion,
@@ -2179,6 +2267,7 @@ export const AppProvider = ({ children }) => {
     formEdicion,
     setFormEdicion,
     abrirModalEditar,
+    seleccionarTurnoEdicion,
     guardarEdicionRegistro,
     eliminarRegistroIndividual,
     mostrarModalNuevoRegistro,

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { NombresPrioridadOficial } from '../constants';
-import { obtenerEstadoHorario } from '../utils/horarios';
+import { obtenerEstadoHorario, minutosParaInicioTurno } from '../utils/horarios';
 
 export default function ProgramacionMedica() {
   const {
@@ -53,6 +53,7 @@ export default function ProgramacionMedica() {
     setMedicoParaCitaManual,
     setMostrarModalCitaManual,
     llamarPacienteCitado,
+    asignarConsultorioMedico,
     ingresarAConsultaCitado,
     marcarCitadoAtendido,
     marcarCitadoNoRespondio,
@@ -138,8 +139,9 @@ export default function ProgramacionMedica() {
               .map((med, mIdx) => {
                 const enTurnoNormal = estaEnTurno(med.horarios);
                 const enVentanaAnticipada = estaEnVentanaAnticipada(med.horarios);
-                // Activo ahora si está en su turno O si faltan hasta 60 min y ya activó CONSULTA
-                const estaActivoAhora = enTurnoNormal || (enVentanaAnticipada && med.estado === 'CONSULTA');
+                // Activo ahora si está en su turno oficial O si faltan hasta 60 min y fue explícitamente autorizado (inicioAnticipado) o llamó paciente
+                const estaIniciadoEnAnticipada = enVentanaAnticipada && (med.inicioAnticipado === true || Boolean(med.pacienteLlamado));
+                const estaActivoAhora = enTurnoNormal || estaIniciadoEnAnticipada;
                 const enUltimaHora = estaEnUltimaHora(med.horarios);
                 const estadoClave = calcularEstadoInteligente(med, estaActivoAhora);
                 const configEstado = ESTADOS_MEDICO[estadoClave] || ESTADOS_MEDICO.PROGRAMADO;
@@ -202,7 +204,7 @@ export default function ProgramacionMedica() {
                               <h3 className={`font-bold text-lg leading-snug ${temaClaro ? 'text-slate-900' : 'text-white'}`}>
                                 {med.Medico}
                               </h3>
-                              {enVentanaAnticipada && !enTurnoNormal && (
+                              {rolUsuario && enVentanaAnticipada && !enTurnoNormal && (
                                 <p className="text-[10px] font-bold text-cyan-400 flex items-center gap-1 mt-0.5">
                                   <span>⏰ Ventana de inicio anticipado disponible</span>
                                 </p>
@@ -262,58 +264,73 @@ export default function ProgramacionMedica() {
                             </p>
                           )}
 
-                          <div className="flex items-center gap-2 mt-1">
-                            <p className="text-xs font-bold text-cyan-400 flex items-center gap-1">
-                              <Stethoscope className="w-3.5 h-3.5" />
-                              <span>{med.consultorioTopico || med.Modulo || "Sin consultorio"}</span>
-                            </p>
-                            {puedeEjecutarLlamado && servicioActivo === 'EMERGENCIA' && (
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <div className="flex items-center gap-1.5">
+                              <Stethoscope className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                              <span className={`text-xs font-black ${med.consultorioTopico ? (temaClaro ? 'text-slate-900' : 'text-cyan-300') : 'text-amber-400 font-bold'}`}>
+                                {med.consultorioTopico || "Consultorio por asignar"}
+                              </span>
+                              {med.Modulo && (
+                                <span className="text-[10px] text-slate-400 font-medium px-1.5 py-0.5 rounded bg-slate-800/60 border border-slate-700/60">
+                                  {med.Modulo}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Botón rápido para asignar o cambiar consultorio */}
+                            {puedeEjecutarLlamado && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setMedicoParaLlamar(med);
-                                  setNombrePaciente(med.pacienteLlamado || '');
-                                  setConsultorioTopico(med.consultorioTopico || '');
+                                  const nuevoCons = window.prompt(`Indique el Consultorio físico para ${med.Medico}:`, med.consultorioTopico || '');
+                                  if (nuevoCons && nuevoCons.trim()) {
+                                    asignarConsultorioMedico(med, nuevoCons.trim());
+                                  }
                                 }}
-                                className="text-[10px] text-amber-400 hover:underline font-bold"
+                                className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition"
+                                title="Cambiar consultorio físico"
                               >
-                                (Cambiar Ubicación)
+                                {med.consultorioTopico ? '✎ Cambiar' : '+ Asignar'}
                               </button>
                             )}
                           </div>
 
                           {/* BLOQUE VOCEO LLAMANDO */}
                           {isLlamando && med.pacienteLlamado && (
-                            <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-xl w-full ${
+                            <div className={`mt-3 p-3.5 rounded-2xl border-2 flex flex-col gap-3 shadow-2xl w-full ${
                               temaClaro 
-                                ? 'bg-rose-100 border-rose-500 text-rose-900 shadow-rose-500/10' 
-                                : 'bg-rose-500/20 border-rose-500 text-rose-300 shadow-rose-950/50'
+                                ? 'bg-gradient-to-r from-cyan-100 via-sky-50 to-white border-cyan-500 text-slate-900 shadow-cyan-500/20 ring-2 ring-cyan-400/40' 
+                                : 'bg-gradient-to-r from-cyan-950/90 via-slate-900 to-blue-950/90 border-cyan-400 text-white shadow-[0_0_30px_rgba(6,182,212,0.35)] ring-2 ring-cyan-400/40'
                             } animate-pulse`}>
                               <div className="flex items-center justify-between gap-3 w-full">
                                 <div className="flex items-center gap-2.5 overflow-hidden flex-1">
-                                  <Bell className="w-5 h-5 text-rose-500 shrink-0 animate-bounce" />
+                                  <div className="p-2 rounded-xl bg-cyan-500 text-slate-950 shrink-0 shadow-lg shadow-cyan-500/50 animate-bounce">
+                                    <Bell className="w-5 h-5" />
+                                  </div>
                                   <div className="overflow-hidden w-full">
                                     <div className="flex items-center justify-between gap-1 mb-1">
-                                      <p className={`text-[10px] uppercase font-bold tracking-wider ${temaClaro ? 'text-rose-700' : 'text-rose-400'}`}>
-                                        Llamando a:
+                                      <p className="text-[10px] uppercase font-black tracking-wider text-cyan-400 flex items-center gap-1">
+                                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping inline-block"></span>
+                                        Llamando a Pantalla:
                                       </p>
                                       {servicioActivo === 'EMERGENCIA' ? (
                                         <span className={`px-2 py-0.5 rounded text-[9px] uppercase shadow-md ${infoTriajeLlamado.cls}`}>
                                           {infoTriajeLlamado.label}
                                         </span>
                                       ) : (
-                                        <span className="px-2 py-0.5 rounded text-[9px] uppercase font-black bg-blue-600 text-white shadow-md">
+                                        <span className="px-2 py-0.5 rounded text-[9px] uppercase font-black bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md">
                                           CONSULTA EXTERNA
                                         </span>
                                       )}
                                     </div>
-                                    <p className={`text-base font-black leading-tight tracking-wide break-words ${temaClaro ? 'text-rose-950' : 'text-white'}`}>
+                                    <p className={`text-base font-black leading-tight tracking-wide break-words text-cyan-300 drop-shadow-sm`}>
                                       {med.pacienteLlamado}
                                     </p>
                                     {(med.consultorioTopico || med.Modulo) && (
-                                      <p className="text-[11px] font-bold text-amber-300 mt-0.5">
-                                        Ubicación: {med.consultorioTopico || med.Modulo}
-                                      </p>
+                                      <div className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-cyan-950/80 border border-cyan-500/40 text-[11px] font-bold text-cyan-200">
+                                        <MapPin className="w-3 h-3 text-cyan-400" />
+                                        <span>Dirigirse a: <strong>{med.consultorioTopico || med.Modulo}</strong></span>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -334,7 +351,7 @@ export default function ProgramacionMedica() {
                               </div>
 
                               {puedeEjecutarLlamado && (
-                                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-rose-500/30 w-full">
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-cyan-500/30 w-full">
                                   <button
                                     type="button"
                                     onClick={() => ingresarAConsultaConPaciente(med)}
@@ -510,6 +527,11 @@ export default function ProgramacionMedica() {
                                 const pendientes = citasDoctor.filter(c => c.situacion === 'PENDIENTE');
                                 const primerPendiente = pendientes[0];
 
+                                const minutosParaInicio = minutosParaInicioTurno(med.horarios);
+                                const consultaIniciadaOActiva = estaActivoAhora || med.estado === 'CONSULTA' || med.estado === 'LLAMANDO' || med.inicioAnticipado;
+                                const puedeVerListaPublica = consultaIniciadaOActiva || minutosParaInicio <= 20;
+                                const mostrarListaCitados = Boolean(rolUsuario) || puedeVerListaPublica;
+
                                 return (
                                   <div className="space-y-2">
                                     {/* Cabecera del Padrón de Citas */}
@@ -581,76 +603,117 @@ export default function ProgramacionMedica() {
                                       </button>
                                     )}
 
-                                    {/* Tabla / Lista de Pacientes Citados */}
+                                    {/* Tabla / Lista de Pacientes Citados (2 pacientes visibles por defecto) */}
                                     {totalCitados > 0 ? (
-                                      <div className={`rounded-xl border overflow-hidden ${
-                                        temaClaro ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
-                                      }`}>
-                                        <div className="max-h-48 overflow-y-auto divide-y divide-slate-800/40 text-[11px]">
-                                          {citasDoctor.map((cita) => {
-                                            const esLlamandoCita = cita.situacion === 'LLAMANDO';
-                                            const esEnConsultaCita = cita.situacion === 'EN_CONSULTA';
-                                            const esAtendidaCita = cita.situacion === 'ATENDIDA';
-                                            const esNoRespondioCita = cita.situacion === 'NO_RESPONDIO';
+                                      mostrarListaCitados ? (
+                                        <div className={`rounded-xl border overflow-hidden ${
+                                          temaClaro ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
+                                        }`}>
+                                          <div className={`${
+                                            listaExpandida[med.Medico] ? 'max-h-72' : 'max-h-[68px]'
+                                          } overflow-y-auto scroll-smooth divide-y divide-slate-800/40 text-[11px] transition-all`}>
+                                            {citasDoctor.map((cita) => {
+                                              const esLlamandoCita = cita.situacion === 'LLAMANDO';
+                                              const esEnConsultaCita = cita.situacion === 'EN_CONSULTA';
+                                              const esAtendidaCita = cita.situacion === 'ATENDIDA';
+                                              const esNoRespondioCita = cita.situacion === 'NO_RESPONDIO';
 
-                                            return (
-                                              <div 
-                                                key={cita.id} 
-                                                className={`p-2 flex items-center justify-between gap-2 transition ${
-                                                  esLlamandoCita ? 'bg-cyan-500/10 border-l-2 border-cyan-400' :
-                                                  esEnConsultaCita ? 'bg-emerald-500/10 border-l-2 border-emerald-400' :
-                                                  esAtendidaCita ? 'opacity-60 bg-slate-900/20' :
-                                                  temaClaro ? 'hover:bg-slate-100' : 'hover:bg-slate-800/30'
-                                                }`}
-                                              >
-                                                <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                                  <span className="font-mono font-bold text-slate-400 shrink-0 text-[10px]">
-                                                    #{cita.orden}
-                                                  </span>
-                                                  <span className="font-mono text-cyan-400 text-[10px] shrink-0 font-bold">
-                                                    {cita.horaAtencion || '--:--'}
-                                                  </span>
-                                                  <span className={`font-bold truncate ${
-                                                    esAtendidaCita ? 'line-through text-slate-500' : temaClaro ? 'text-slate-800' : 'text-white'
-                                                  }`}>
-                                                    {cita.paciente}
-                                                  </span>
-                                                  {cita.esManual && (
-                                                    <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 shrink-0 font-bold">
-                                                      Adicional
+                                              return (
+                                                <div 
+                                                  key={cita.id} 
+                                                  className={`py-1.5 px-2 flex items-center justify-between gap-2 transition ${
+                                                    esLlamandoCita ? 'bg-cyan-500/10 border-l-2 border-cyan-400' :
+                                                    esEnConsultaCita ? 'bg-emerald-500/10 border-l-2 border-emerald-400' :
+                                                    esAtendidaCita ? 'opacity-60 bg-slate-900/20' :
+                                                    temaClaro ? 'hover:bg-slate-100' : 'hover:bg-slate-800/30'
+                                                  }`}
+                                                >
+                                                  <div className="flex items-center gap-1.5 overflow-hidden flex-1">
+                                                    <span className="font-mono font-bold text-slate-400 shrink-0 text-[10px]">
+                                                      #{cita.orden}
                                                     </span>
-                                                  )}
-                                                </div>
+                                                    <span className="font-mono text-cyan-400 text-[10px] shrink-0 font-bold">
+                                                      {cita.horaAtencion || '--:--'}
+                                                    </span>
+                                                    <span className={`font-bold truncate ${
+                                                      esAtendidaCita ? 'line-through text-slate-500' : temaClaro ? 'text-slate-800' : 'text-white'
+                                                    }`}>
+                                                      {cita.paciente}
+                                                    </span>
+                                                    {cita.esManual && (
+                                                      <span className="text-[9px] px-1 rounded bg-amber-500/20 text-amber-300 shrink-0 font-bold">
+                                                        Adicional
+                                                      </span>
+                                                    )}
+                                                  </div>
 
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                  {/* Badge de Situación */}
-                                                  <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
-                                                    esAtendidaCita ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                                                    esEnConsultaCita ? 'bg-emerald-600 text-white animate-pulse' :
-                                                    esLlamandoCita ? 'bg-cyan-500 text-slate-950 font-black animate-pulse' :
-                                                    esNoRespondioCita ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                                                    'bg-slate-800 text-slate-300 border border-slate-700'
-                                                  }`}>
-                                                    {cita.situacion || 'PENDIENTE'}
-                                                  </span>
+                                                  <div className="flex items-center gap-1.5 shrink-0">
+                                                    {/* Badge de Situación */}
+                                                    <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                                      esAtendidaCita ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                                      esEnConsultaCita ? 'bg-emerald-600 text-white animate-pulse' :
+                                                      esLlamandoCita ? 'bg-cyan-500 text-slate-950 font-black animate-pulse' :
+                                                      esNoRespondioCita ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                                                      'bg-slate-800 text-slate-300 border border-slate-700'
+                                                    }`}>
+                                                      {cita.situacion || 'PENDIENTE'}
+                                                    </span>
 
-                                                  {/* Botón individual de llamado si está pendiente */}
-                                                  {puedeEjecutarLlamado && estaActivoAhora && cita.situacion === 'PENDIENTE' && !med.pacienteLlamado && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => llamarPacienteCitado(med, cita)}
-                                                      className="p-1.5 bg-cyan-600/30 hover:bg-cyan-500 text-cyan-300 hover:text-white border border-cyan-500/40 rounded-lg transition"
-                                                      title="Llamar a este paciente"
-                                                    >
-                                                      <Bell className="w-3.5 h-3.5" />
-                                                    </button>
-                                                  )}
+                                                    {/* Botón individual de llamado si está pendiente */}
+                                                    {puedeEjecutarLlamado && estaActivoAhora && cita.situacion === 'PENDIENTE' && !med.pacienteLlamado && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => llamarPacienteCitado(med, cita)}
+                                                        className="p-1.5 bg-cyan-600/30 hover:bg-cyan-500 text-cyan-300 hover:text-white border border-cyan-500/40 rounded-lg transition"
+                                                        title="Llamar a este paciente"
+                                                      >
+                                                        <Bell className="w-3.5 h-3.5" />
+                                                      </button>
+                                                    )}
+                                                  </div>
                                                 </div>
-                                              </div>
-                                            );
-                                          })}
+                                              );
+                                            })}
+                                          </div>
+
+                                          {/* Botón para expandir/colapsar si hay más de 2 citados */}
+                                          {totalCitados > 2 && (
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleExpandir(med.Medico)}
+                                              className={`w-full py-1 text-[10px] font-bold text-center border-t transition flex items-center justify-center gap-1 ${
+                                                temaClaro 
+                                                  ? 'text-cyan-700 bg-slate-100 hover:bg-slate-200 border-slate-200' 
+                                                  : 'text-cyan-400 hover:text-cyan-300 bg-slate-900/60 hover:bg-slate-900 border-slate-800'
+                                              }`}
+                                            >
+                                              {listaExpandida[med.Medico] ? (
+                                                <>
+                                                  <ChevronUp className="w-3 h-3" />
+                                                  <span>Mostrar solo 2 citados</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <ChevronDown className="w-3 h-3" />
+                                                  <span>Ver los {totalCitados} citados (+{totalCitados - 2} más)</span>
+                                                </>
+                                              )}
+                                            </button>
+                                          )}
                                         </div>
-                                      </div>
+                                      ) : (
+                                        <div className={`p-3 rounded-xl border text-center ${
+                                          temaClaro ? 'bg-slate-50 border-dashed border-slate-300' : 'bg-slate-900/40 border-dashed border-slate-800'
+                                        }`}>
+                                          <p className="text-[11px] font-bold text-slate-400 flex items-center justify-center gap-1.5">
+                                            <Lock className="w-3.5 h-3.5 text-cyan-400" />
+                                            <span>Padrón visible al público 20 min antes del turno</span>
+                                          </p>
+                                          <p className="text-[10px] text-slate-500 mt-0.5">
+                                            (Faltan {minutosParaInicio} min para el inicio de consulta)
+                                          </p>
+                                        </div>
+                                      )
                                     ) : (
                                       <div className={`p-3.5 rounded-xl border text-center ${
                                         temaClaro ? 'bg-slate-50 border-dashed border-slate-300' : 'bg-slate-900/40 border-dashed border-slate-800'

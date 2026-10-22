@@ -471,21 +471,21 @@ export function ModalLlamadaPaciente() {
               autoFocus
             />
 
-            {servicioActivo === 'EMERGENCIA' && (
-              <div>
-                <label className="block text-xs font-bold mb-1.5 text-slate-400">Consultorio / Tópico:</label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={consultorioTopico}
-                  onChange={(e) => setConsultorioTopico(e.target.value)}
-                  placeholder="EJ. Tópico de Medicina 1"
-                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-bold focus:outline-none transition ${
-                    temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
-                  }`}
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-bold mb-1.5 text-slate-400">
+                {servicioActivo === 'EMERGENCIA' ? 'Consultorio / Tópico:' : 'Consultorio de Atención:'}
+              </label>
+              <input
+                type="text"
+                autoComplete="off"
+                value={consultorioTopico}
+                onChange={(e) => setConsultorioTopico(e.target.value)}
+                placeholder={servicioActivo === 'EMERGENCIA' ? "EJ. Tópico de Medicina 1" : "EJ. Consultorio 3"}
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm font-bold focus:outline-none transition ${
+                  temaClaro ? 'bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-800 border-slate-700 text-white'
+                }`}
+              />
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -587,6 +587,7 @@ export function ModalEdicionRegistro() {
     setMedicoParaEditar,
     temaClaro,
     guardarEdicionRegistro,
+    seleccionarTurnoEdicion,
     formEdicion,
     setFormEdicion
   } = useApp();
@@ -607,6 +608,36 @@ export function ModalEdicionRegistro() {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Si el médico tiene 2 o más turnos registrados, permitir seleccionar cuál modificar */}
+        {medicoParaEditar.horarios && medicoParaEditar.horarios.length > 1 && (
+          <div className="mb-4 p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/30">
+            <p className="text-xs font-bold text-cyan-400 mb-2 flex items-center gap-1.5">
+              <Clock className="w-4 h-4" />
+              <span>Este médico tiene {medicoParaEditar.horarios.length} turnos registrados. Seleccione cuál desea modificar:</span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {medicoParaEditar.horarios.map((h, hIdx) => {
+                const esSeleccionado = (formEdicion.turnoIndex ?? 0) === hIdx;
+                return (
+                  <button
+                    key={hIdx}
+                    type="button"
+                    onClick={() => seleccionarTurnoEdicion && seleccionarTurnoEdicion(hIdx)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-black border transition flex items-center gap-1.5 ${
+                      esSeleccionado
+                        ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-md shadow-cyan-500/30 ring-2 ring-cyan-300'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>Turno #{hIdx + 1}: {h.inicio} - {h.fin}</span>
+                    {esSeleccionado && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <form onSubmit={guardarEdicionRegistro} autoComplete="off" className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1320,6 +1351,7 @@ export function ModalSubirCitas() {
 
   const [archivoSeleccionado, setArchivoSeleccionado] = useState(null);
   const [nombreArchivo, setNombreArchivo] = useState('');
+  const [turnoElegido, setTurnoElegido] = useState('');
 
   if (!mostrarModalSubirCitas || !medicoParaSubirCitas) return null;
 
@@ -1334,7 +1366,7 @@ export function ModalSubirCitas() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!archivoSeleccionado) return;
-    handleSubirCitasExcel(archivoSeleccionado, medicoParaSubirCitas);
+    handleSubirCitasExcel(archivoSeleccionado, medicoParaSubirCitas, turnoElegido);
   };
 
   return (
@@ -1367,6 +1399,47 @@ export function ModalSubirCitas() {
             {medicoParaSubirCitas.Area} — {medicoParaSubirCitas.Modulo || 'Módulo General'}
           </p>
         </div>
+
+        {/* Si el médico tiene más de 1 turno en el día, permitir seleccionar para cuál subirá las citas */}
+        {medicoParaSubirCitas.horarios && medicoParaSubirCitas.horarios.length > 1 && (
+          <div className="mb-4 p-3 rounded-2xl bg-blue-500/10 border border-blue-500/30">
+            <label className="block text-xs font-bold text-blue-400 mb-1.5 flex items-center gap-1.5">
+              <Clock className="w-4 h-4" />
+              <span>¿Para qué turno subirá este padrón de citas?</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setTurnoElegido('')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                  turnoElegido === ''
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-md ring-2 ring-blue-300'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
+              >
+                Todos los Turnos
+              </button>
+              {medicoParaSubirCitas.horarios.map((h, hIdx) => {
+                const labelH = `${h.inicio} - ${h.fin}`;
+                const esActivo = turnoElegido === labelH;
+                return (
+                  <button
+                    key={hIdx}
+                    type="button"
+                    onClick={() => setTurnoElegido(labelH)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
+                      esActivo
+                        ? 'bg-blue-600 text-white border-blue-500 shadow-md ring-2 ring-blue-300'
+                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                    }`}
+                  >
+                    Turno: {labelH}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <div className={`p-4 rounded-2xl border mb-4 text-xs ${
           temaClaro ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
