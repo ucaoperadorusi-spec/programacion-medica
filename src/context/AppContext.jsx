@@ -296,17 +296,15 @@ export const AppProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Suscripción a Historial de Llamados (optimizada para fecha actual)
+  // Suscripción a Historial de Llamados y Auditoría
   useEffect(() => {
-    const hoy = obtenerFechaHoyLocal();
-    const q = query(
-      collection(db, "historial_llamados"),
-      where("fechaFormateada", "==", hoy)
-    );
+    const q = collection(db, "historial_llamados");
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const datos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       datos.sort((a, b) => new Date(b.fechaIso || 0).getTime() - new Date(a.fechaIso || 0).getTime());
       setHistorialLlamados(datos);
+    }, (error) => {
+      console.error("Error en suscripción a historial_llamados:", error);
     });
     return () => unsubscribe();
   }, []);

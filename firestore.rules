@@ -73,14 +73,14 @@ service cloud.firestore {
 
     // 4. Historial de llamadas y auditoría
     match /historial_llamados/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create: if canModifySchedules();
       allow update, delete: if isAdmin();
     }
 
     // 5. Registro de pacientes atendidos / inasistencia
     match /pacientes_medico/{docId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create: if canModifySchedules();
       allow update, delete: if isAdmin();
     }
