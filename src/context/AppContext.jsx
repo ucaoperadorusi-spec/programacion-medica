@@ -490,6 +490,11 @@ export const AppProvider = ({ children }) => {
 
   // Modificar Estados Médicos
   const cambiarEstadoMedico = async (idsDocs, nuevoEstado, estaActivo = false, estaEnUltimaHoraFlag = false, medObj = null) => {
+    if (!estaActivo) {
+      toast.warn("El médico no se encuentra en turno activo. No se puede modificar su estado.");
+      return;
+    }
+
     if (servicioActivo === 'EMERGENCIA' && rolUsuario === 'ADMISION') {
       if (nuevoEstado !== 'PAUSA' && nuevoEstado !== 'AUSENTE' && nuevoEstado !== 'CONSULTA') {
         toast.warn("El perfil de Admisión solo puede asignar: 'En Consulta', 'En Pausa' o 'Ausente'.");

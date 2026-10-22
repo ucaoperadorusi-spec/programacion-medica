@@ -77,11 +77,11 @@ export default function Header() {
               ? 'bg-gradient-to-r from-rose-500 to-amber-400 bg-clip-text text-transparent'
               : temaClaro ? 'text-blue-900' : 'bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent'
           }`}>
-            H. II PUCALLPA / {servicioActivo === 'EMERGENCIA' ? 'SERVICIO DE EMERGENCIA 24H' : 'CONSULTA EXTERNA'}
+            H. II PUCALLPA / {servicioActivo === 'EMERGENCIA' ? 'EMERGENCIA' : 'CONSULTA EXTERNA'}
           </h1>
           <p className={`text-xs font-medium ${temaClaro ? 'text-slate-500' : 'text-slate-400'}`}>
             {modoTvActivo && moduloActualTv 
-              ? `VISTA TV: Proyectando ${moduloActualTv} ${medicoLlamandoEnVivo ? '🔔 (INTERRUPCIÓN POR VOCEO)' : ''}` 
+              ? `VISTA TV: Proyectando ${moduloActualTv} ${medicoLlamandoEnVivo ? '🔔 (INTERRUPCIÓN POR VOZ)' : ''}` 
               : `Mostrando ${modulosSeleccionados.length} de ${todosLosModulosDisponibles.length} módulo(s)`}
           </p>
         </div>
@@ -116,7 +116,7 @@ export default function Header() {
           }`}
         >
           <Siren className="w-4 h-4 text-rose-400" />
-          <span>Emergencia 24H</span>
+          <span>Emergencia</span>
         </button>
 
         {rolUsuario === 'ADMIN' && (
@@ -163,7 +163,7 @@ export default function Header() {
           }`}
         >
           <Filter className="w-4 h-4" />
-          <span>{soloTurnoActual ? "Filtrado: Turno Actual" : "Vista: Todo"}</span>
+          <span>{soloTurnoActual ? "Filtrado: Turno Act" : "Vista: Todo"}</span>
         </button>
 
         <button
@@ -174,7 +174,7 @@ export default function Header() {
           }`}
         >
           <SlidersHorizontal className="w-4 h-4 text-cyan-500" />
-          <span>Módulos ({modulosSeleccionados.length})</span>
+          <span>Sector ({modulosSeleccionados.length})</span>
         </button>
 
         <button

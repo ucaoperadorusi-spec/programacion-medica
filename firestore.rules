@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function userEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/usuarios/$(userEmail())).data;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/usuarios/$(userEmail())) &&
+             getUserData().activo != false &&
+             getUserData().rol == role;
+    }
+
+    function isAdmin() {
+      return hasRole('ADMIN');
+    }
+
+    function isOperador() {
+      return hasRole('OPERADOR') || isAdmin();
+    }
+
+    function isAdmision() {
+      return hasRole('ADMISION') || isAdmin();
+    }
+
+    function isMedico() {
+      return hasRole('MEDICO') || isAdmin();
+    }
+
+    function canModifySchedules() {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/usuarios/$(userEmail())) &&
+             getUserData().activo != false &&
+             (getUserData().rol in ['ADMIN', 'OPERADOR', 'ADMISION', 'MEDICO']);
+    }
+
+    // 1. Colección usuarios: Solo admins administran usuarios; usuarios nuevos por Google solo pueden registrarse con rol OPERADOR
+    match /usuarios/{emailDoc} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() || (
+        isAuthenticated() && 
+        userEmail() == emailDoc.lower() && 
+        request.resource.data.rol == 'OPERADOR' &&
+        request.resource.data.email.lower() == userEmail()
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // 2. Programación médica: Lectura pública (para pantalla TV), escritura restringida por roles
+    match /programacion_medica/{docId} {
+      allow read: if true;
+      allow create, delete: if isAdmin() || isOperador();
+      allow update: if canModifySchedules();
+    }
+
+    // 3. Lista de espera (Admisión / Triaje)
+    match /lista_espera/{docId} {
+      allow read: if true;
+      allow create, update: if canModifySchedules();
+      allow delete: if isAdmin() || isAdmision();
+    }
+
+    // 4. Historial de llamadas y auditoría
+    match /historial_llamados/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if canModifySchedules();
+      allow update, delete: if isAdmin();
+    }
+
+    // 5. Registro de pacientes atendidos / inasistencia
+    match /pacientes_medico/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if canModifySchedules();
+      allow update, delete: if isAdmin();
+    }
+
+    // 6. Configuración global (comunicados, anuncios en cintillo)
+    match /configuracion/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}

@@ -122,7 +122,20 @@ export default function ProgramacionMedica() {
                 const estadoClave = calcularEstadoInteligente(med, estaActivoAhora);
                 const configEstado = ESTADOS_MEDICO[estadoClave] || ESTADOS_MEDICO.PROGRAMADO;
                 const IconoEstado = configEstado.icon;
-                const tiempoTranscurrido = obtenerTiempoTranscurrido(med.horaIngresoConsulta || med.estadoUltimoCambio);
+
+                // El contador de minutos solo debe mostrarse cuando:
+                // 1. El médico está en consulta atendiendo activamente a un paciente (CONSULTA con pacienteLlamado)
+                // 2. El médico está en PAUSA (mide el tiempo transcurrido en pausa)
+                // 3. El médico está AUSENTE (mide el tiempo transcurrido ausente)
+                // Si la consulta terminó o no hay pacientes en atención, no se muestra contador.
+                let tiempoTranscurrido = null;
+                if (estadoClave === "CONSULTA") {
+                  if (med.pacienteLlamado) {
+                    tiempoTranscurrido = obtenerTiempoTranscurrido(med.horaIngresoConsulta || med.estadoUltimoCambio);
+                  }
+                } else if (estadoClave === "PAUSA" || estadoClave === "AUSENTE") {
+                  tiempoTranscurrido = obtenerTiempoTranscurrido(med.estadoUltimoCambio);
+                }
 
                 const inasistentesPendientes = obtenerInasistentesPendientes(med.Medico);
                 
@@ -403,7 +416,7 @@ export default function ProgramacionMedica() {
                                 </button>
                               )}
 
-                              {puedeEjecutarLlamado && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
+                              {puedeEjecutarLlamado && estaActivoAhora && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                                 <div className="flex gap-2">
                                   {enCola.length > 0 && (
                                     <button
@@ -433,7 +446,7 @@ export default function ProgramacionMedica() {
                           )}
 
                           {/* BOTÓN CONSULTA EXTERNA */}
-                          {servicioActivo === 'CONSULTA_EXTERNA' && puedeEjecutarLlamado && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
+                          {servicioActivo === 'CONSULTA_EXTERNA' && puedeEjecutarLlamado && estaActivoAhora && !med.pacienteLlamado && estadoClave !== 'LLAMANDO' && (
                             <div className="mt-3">
                               <button
                                 type="button"
@@ -646,15 +659,19 @@ export default function ProgramacionMedica() {
                             const configBtn = ESTADOS_MEDICO[key];
 
                             let esBloqueado = false;
-                            if (estaActivoAhora && key === "PROGRAMADO") {
+                            if (!estaActivoAhora || estadoClave === "PROGRAMADO" || estadoClave === "CULMINADO") {
                               esBloqueado = true;
-                            } else if (estaActivoAhora && key === "CULMINADO" && !enUltimaHora) {
-                              esBloqueado = true;
-                            }
-
-                            if (servicioActivo === 'EMERGENCIA' && rolUsuario === 'ADMISION') {
-                              if (key !== 'CONSULTA' && key !== 'PAUSA' && key !== 'AUSENTE') {
+                            } else {
+                              if (estaActivoAhora && key === "PROGRAMADO") {
                                 esBloqueado = true;
+                              } else if (estaActivoAhora && key === "CULMINADO" && !enUltimaHora) {
+                                esBloqueado = true;
+                              }
+
+                              if (servicioActivo === 'EMERGENCIA' && rolUsuario === 'ADMISION') {
+                                if (key !== 'CONSULTA' && key !== 'PAUSA' && key !== 'AUSENTE') {
+                                  esBloqueado = true;
+                                }
                               }
                             }
 
@@ -663,10 +680,12 @@ export default function ProgramacionMedica() {
                                 key={key}
                                 type="button"
                                 disabled={esBloqueado}
-                                onClick={() => cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora, med)}
+                                onClick={() => !esBloqueado && cambiarEstadoMedico(med.ids, key, estaActivoAhora, enUltimaHora, med)}
                                 className={`py-1.5 text-[10px] font-black tracking-wider rounded-lg border transition shadow-sm ${
                                   esBloqueado
-                                    ? 'bg-slate-200/50 text-slate-400 border-slate-300/50 opacity-40 cursor-not-allowed dark:bg-slate-800/20 dark:text-slate-600 dark:border-slate-800/50'
+                                    ? activeState
+                                      ? `${configBtn.buttonActive} opacity-60 cursor-not-allowed`
+                                      : 'bg-slate-200/50 text-slate-400 border-slate-300/50 opacity-30 cursor-not-allowed dark:bg-slate-800/20 dark:text-slate-600 dark:border-slate-800/50'
                                     : activeState
                                       ? configBtn.buttonActive
                                       : temaClaro
